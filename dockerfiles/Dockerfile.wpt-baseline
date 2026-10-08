@@ -2,8 +2,8 @@
 #
 # Stock Firefox control build for the Foxhound WPT comparison.
 #
-# Builds *pristine upstream Firefox* from the exact commit that Foxhound's main
-# branch is based on, using a mozconfig that mirrors taintfox_mozconfig_ubuntu
+# Builds *pristine upstream Firefox* from the exact commit that Foxhound is
+# based on, using a mozconfig that mirrors taintfox_mozconfig_ubuntu
 # option for option (minus Foxhound branding and app name). Same compiler, same
 # configure flags, same vendored WPT checkout -- the only difference is the
 # Foxhound commits.
@@ -15,15 +15,29 @@
 ARG TOOLCHAIN_IMAGE=foxhound-wpt-toolchain
 FROM ${TOOLCHAIN_IMAGE} AS source
 
-# Merge-base of this branch and firefox-release: Firefox 153.0.
-#   git merge-base mine/experimental-fixes origin/firefox-release
+# The upstream commit is FIREFOX_UPSTREAM_COMMIT in .PLAYWRIGHT_VERSION at
+# FOXHOUND_REF, so the control matches the Foxhound build it is compared with.
+# Set FIREFOX_SHA to build a different commit.
+ARG FOXHOUND_REPO=https://github.com/SAP/project-foxhound.git
+ARG FOXHOUND_REF=main
+# Bump to re-read .PLAYWRIGHT_VERSION when the branch has moved.
+ARG FOXHOUND_CACHE_BUST=0
 ARG FIREFOX_REPO=https://github.com/SAP/project-foxhound.git
-ARG FIREFOX_SHA=f1b6c0f86b96b7e0688c26f65803576f27cdaf88
+ARG FIREFOX_SHA=
 
 WORKDIR /home/foxhound/firefox
 RUN git init -q . \
+    && git remote add foxhound "${FOXHOUND_REPO}" \
     && git remote add origin "${FIREFOX_REPO}" \
-    && git fetch --depth=1 origin "${FIREFOX_SHA}" \
+    && sha="${FIREFOX_SHA}" \
+    && if [ -z "${sha}" ]; then \
+         git fetch -q --depth=1 --filter=blob:none foxhound "${FOXHOUND_REF}" \
+         && sha=$(git show FETCH_HEAD:.PLAYWRIGHT_VERSION \
+                    | sed -n 's/^FIREFOX_UPSTREAM_COMMIT=//p'); \
+       fi \
+    && test -n "${sha}" \
+    && echo "Firefox upstream commit: ${sha}" \
+    && git fetch --depth=1 origin "${sha}" \
     && git checkout -q FETCH_HEAD \
     && git rev-parse HEAD > /home/foxhound/firefox-revision.txt \
     && echo "Firefox version: $(cat browser/config/version.txt)"
