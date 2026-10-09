@@ -58,11 +58,11 @@ Build args:
 | --- | --- | --- |
 | `FOXHOUND_REPO` | `https://github.com/SAP/project-foxhound.git` | Repository to clone |
 | `FOXHOUND_REF` | `main` | Branch or tag |
-| `FOXHOUND_CACHE_BUST` | `0` | Bump to force a fresh clone of a moved branch |
+| `FOXHOUND_CACHE_BUST` | `0` | Bump to force a fresh clone of a moved branch, and to re-read `.PLAYWRIGHT_VERSION` |
 | `BUILD_JOBS` | *(unset)* | `MOZ_PARALLEL_BUILD`; useful on memory-constrained hosts |
 | `UBUNTU_VERSION` | `24.04` | Base image |
 | `LLVM_VERSION` | `20` | clang/lld version pulled from apt.llvm.org (must be >= 19) |
-| `RUST_VERSION` | `1.90.0` | rustup toolchain |
+| `RUST_VERSION` | `RUST_VERSION` in `.PLAYWRIGHT_VERSION` at `FOXHOUND_REF` | rustup toolchain |
 | `CBINDGEN_VERSION` | `0.29.4` | cbindgen |
 | `USER_UID` / `USER_GID` | `1000` | Match your host user so `/results` is writable |
 

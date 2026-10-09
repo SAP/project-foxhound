@@ -17,6 +17,10 @@
 # See README.wpt.md for the full set of knobs.
 
 ARG UBUNTU_VERSION=24.04
+ARG FOXHOUND_REPO=https://github.com/SAP/project-foxhound.git
+ARG FOXHOUND_REF=main
+# Bump to force a re-clone when the branch has moved.
+ARG FOXHOUND_CACHE_BUST=0
 
 ##############################################################################
 # Stage 1: system packages + the Firefox build toolchain via `mach bootstrap`
@@ -102,11 +106,26 @@ ENV HOME=/home/foxhound \
     MOZ_NOSPAM=1 \
     SHELL=/bin/bash
 
-# Pinned to the version .PLAYWRIGHT_VERSION names as known-good for this tree.
-ARG RUST_VERSION=1.90.0
+# Defaults to the version .PLAYWRIGHT_VERSION at FOXHOUND_REF names as
+# known-good for that tree. The blobless fetch only downloads that one file.
+ARG FOXHOUND_REPO
+ARG FOXHOUND_REF
+ARG FOXHOUND_CACHE_BUST
+ARG RUST_VERSION=
 ARG CBINDGEN_VERSION=0.29.4
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
-      | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}" \
+RUN rust="${RUST_VERSION}" \
+    && if [ -z "${rust}" ]; then \
+         tmp=$(mktemp -d) \
+         && git -C "${tmp}" init -q \
+         && git -C "${tmp}" remote add foxhound "${FOXHOUND_REPO}" \
+         && git -C "${tmp}" fetch -q --depth=1 --filter=blob:none foxhound "${FOXHOUND_REF}" \
+         && rust=$(git -C "${tmp}" show FETCH_HEAD:.PLAYWRIGHT_VERSION \
+                     | sed -n 's/^RUST_VERSION="\{0,1\}\([^"]*\)"\{0,1\}$/\1/p') \
+         && rm -rf "${tmp}"; \
+       fi \
+    && test -n "${rust}" \
+    && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+      | sh -s -- -y --profile minimal --default-toolchain "${rust}" \
     && rustc --version \
     && cargo install cbindgen --locked --version "${CBINDGEN_VERSION}" \
     && cbindgen --version \
@@ -117,10 +136,9 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
 ##############################################################################
 FROM toolchain AS source
 
-ARG FOXHOUND_REPO=https://github.com/SAP/project-foxhound.git
-ARG FOXHOUND_REF=main
-# Bump to force a re-clone when the branch has moved.
-ARG FOXHOUND_CACHE_BUST=0
+ARG FOXHOUND_REPO
+ARG FOXHOUND_REF
+ARG FOXHOUND_CACHE_BUST
 
 WORKDIR /home/foxhound/foxhound
 RUN git clone --depth=1 --branch "${FOXHOUND_REF}" "${FOXHOUND_REPO}" . \
