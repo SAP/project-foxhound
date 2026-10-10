@@ -2236,6 +2236,13 @@ bool IRGenerator::canOptimizeConstantDataProperty(NativeObject* holder,
     return false;
   }
 
+  // Foxhound: the string would be atomized and written back to the slot below,
+  // which drops its taint.
+  const Value& slotValue = holder->getSlot(prop.slot());
+  if (slotValue.isString() && slotValue.toString()->isTainted()) {
+    return false;
+  }
+
   *objFuse = cx_->zone()->objectFuses.getOrCreate(cx_, holder);
   if (!*objFuse) {
     cx_->recoverFromOutOfMemory();
