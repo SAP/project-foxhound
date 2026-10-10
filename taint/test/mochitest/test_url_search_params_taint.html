@@ -1,0 +1,48 @@
+<!DOCTYPE HTML>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Taint propagation from URLSearchParams back into the URL</title>
+    <script src="/tests/SimpleTest/SimpleTest.js"></script>
+    <link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
+    <script>
+      // Reference behaviour: a URL built from a tainted spec keeps the taint on
+      // its search component.
+      add_task(async function test_search_tainted_via_constructor() {
+        const u = new URL(String.tainted("https://foo.com?a=b#xxx"));
+        check_tainted(u.search);
+      });
+
+      // Regression test: mutating the URL through its searchParams object must
+      // propagate the taint of the appended value back into url.search.
+      // Previously the taint was lost because nsStandardURL::SetQuery inserted
+      // the (unescaped) query characters without their taint.
+      add_task(async function test_search_tainted_via_search_params_append() {
+        const u = new URL("https://foo.com");
+        u.searchParams.append("a", String.tainted("b"));
+        check_tainted(u.search);
+      });
+
+      // Same round-trip but on an existing (already populated) query, and with a
+      // value that requires percent-encoding.
+      add_task(async function test_search_tainted_via_search_params_set() {
+        const u = new URL("https://foo.com?a=untainted");
+        u.searchParams.set("a", String.tainted("b<c>"));
+        check_tainted(u.search);
+        ok(u.search.includes("b%3Cc%3E"), "value was percent-encoded: " + u.search);
+      });
+
+      // The untainted key/value pair must stay untainted.
+      add_task(async function test_search_untainted_stays_untainted() {
+        const u = new URL("https://foo.com");
+        u.searchParams.append("a", "b");
+        check_untainted(u.search);
+      });
+    </script>
+  </head>
+  <body>
+    <p id="display"></p>
+    <div id="content" style="display: none"></div>
+    <pre id="test"></pre>
+  </body>
+</html>
