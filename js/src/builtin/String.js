@@ -355,7 +355,9 @@ function String_replaceAll(searchValue, replaceValue) {
     // Fast path for regular expressions with the original
     // RegExp.prototype[@@replace] function.
     if (IsOptimizableRegExpObject(searchValue)) {
-      return callFunction(RegExpReplace, searchValue, this, replaceValue);
+      var ret = callFunction(RegExpReplace, searchValue, this, replaceValue);
+      AddTaintOperationNativeFull(ret, "replaceAll", searchValue, replaceValue);
+      return ret;
     }
 
     // Step 2.c.
@@ -363,7 +365,12 @@ function String_replaceAll(searchValue, replaceValue) {
 
     // Step 2.b.
     if (replacer !== undefined) {
-      return callContentFunction(replacer, searchValue, this, replaceValue);
+      var ret = callContentFunction(replacer, searchValue, this, replaceValue);
+      // Foxhound: ret could be a function, only taint strings.
+      if (typeof (ret) === "string") {
+        AddTaintOperationNativeFull(ret, "replaceAll", searchValue, replaceValue);
+      }
+      return ret;
     }
   }
 
@@ -376,7 +383,13 @@ function String_replaceAll(searchValue, replaceValue) {
   // Steps 5-6.
   if (!IsCallable(replaceValue)) {
     // Steps 7-16.
-    return StringReplaceAllString(string, searchString, ToString(replaceValue));
+    var ret = StringReplaceAllString(
+      string,
+      searchString,
+      ToString(replaceValue)
+    );
+    AddTaintOperationNativeFull(ret, "replaceAll", searchValue, replaceValue);
+    return ret;
   }
 
   // Step 7.
@@ -449,6 +462,8 @@ function String_replaceAll(searchValue, replaceValue) {
     // Step 15.a.
     result += Substring(string, endOfLastMatch, string.length - endOfLastMatch);
   }
+
+  AddTaintOperationNativeFull(result, "replaceAll", searchValue, replaceValue);
 
   // Step 16.
   return result;
@@ -1002,7 +1017,9 @@ function String_sup() {
 
 function EscapeAttributeValue(v) {
   var inputStr = ToString(v);
-  return StringReplaceAllString(inputStr, '"', "&quot;");
+  var ret = StringReplaceAllString(inputStr, '"', "&quot;");
+  AddTaintOperationNativeFull(ret, "replaceAll", '"', "&quot;");
+  return ret;
 }
 
 // ES6 draft 2014-04-27 B.2.3.2
