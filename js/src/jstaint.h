@@ -107,6 +107,21 @@ TaintOperation TaintOperationConcat(JSContext* cx, const char* name,
                                     JSString* const& str1,
                                     JSString* const& str2);
 
+// Returns a copy of a concat operation whose order marker also names the side the
+// tracked range came from, e.g. `tainted:LR` becomes `tainted:LR:L`.
+//
+// `tainted:LR` only says that both operands carried taint; it does not say which
+// of them the range being extended is. A consumer replaying the flow needs that to
+// put the value back in its original position inside the app's template, and it
+// cannot recover it by comparing operand text when the operand was truncated or
+// never survives into the result.
+//
+// `side` is u"L", u"R", or u"LR" for a range that spans the concatenation boundary
+// (concat merges adjacent ranges that share a flow, so `t + t` yields one range
+// covering both operands).
+TaintOperation TaintOperationConcatWithSide(const TaintOperation& op,
+                                            const char16_t* side);
+
 TaintOperation TaintOperationFromContext(JSContext* cx, const char* name);
 
 // Mark all tainted arguments of a function call.

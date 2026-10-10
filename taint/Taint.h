@@ -580,6 +580,24 @@ class StringTaint {
   // from a taint operation constructor
   StringTaint& extend(TaintOperation&& operation);
 
+  // Adds a taint operation to the taint flows of all ranges in this instance,
+  // building the operation per range rather than sharing one. `opForRange` is
+  // called with each range and returns the operation to add to that range's flow.
+  //
+  // This exists for operations whose recorded arguments depend on where in the
+  // result a range sits, which a single shared operation cannot express: concat
+  // uses it to record which operand a range came from.
+  template <typename OpForRange>
+  StringTaint& extendPerRange(OpForRange&& opForRange) {
+    if (!ranges_) {
+      return *this;
+    }
+    for (auto& range : *ranges_) {
+      range.flow().extend(opForRange(range));
+    }
+    return *this;
+  }
+
   // Adds a taint operation to the taint flows of all ranges in this instance.
   StringTaint& overlay(uint32_t begin, uint32_t end,
                        const TaintOperation& operation);

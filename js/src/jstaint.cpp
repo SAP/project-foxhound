@@ -361,6 +361,16 @@ TaintOperation JS::TaintOperationConcat(JSContext* cx, const char* name,
   return TaintOperation(name, TaintLocationFromContext(cx), args);
 }
 
+TaintOperation JS::TaintOperationConcatWithSide(const TaintOperation& op,
+                                               const char16_t* side) {
+  std::vector<std::u16string> args = op.arguments();
+  MOZ_ASSERT(!args.empty(), "a concat operation always records an order marker");
+  if (!args.empty()) {
+    args.back().append(u":").append(side);
+  }
+  return TaintOperation(op.name(), op.location(), std::move(args));
+}
+
 TaintOperation JS::TaintOperationFromContext(JSContext* cx, const char* name) {
   return TaintOperation(name, TaintLocationFromContext(cx));
 }

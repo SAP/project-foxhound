@@ -1433,14 +1433,31 @@ JSString* js::ConcatStrings(
     gc::Heap heap) {
 
   TaintOperation op("concat");
+  bool bothTainted = false;
+  size_t leftLength = 0;
   if ((left && right) && (left->taint().hasTaint() || right->taint().hasTaint())) {
     op = JS::TaintOperationConcat(cx, "concat", left, right);
+    bothTainted = left->taint().hasTaint() && right->taint().hasTaint();
+    leftLength = left->length();
   }
-  
+
   JSString* str = ConcatStringsQuiet<allowGC>(cx, left, right, heap);
 
   if (str && str->taint().hasTaint()) {
-     str->taint().extend(op);
+    if (bothTainted) {
+      // Foxhound: the shared `tainted:LR` marker says both operands carried taint
+      // but not which one this range is, so record the side per range. Without it
+      // a consumer replaying the flow cannot place the value back in its original
+      // position when the operands' text does not identify them.
+      str->taint().extendPerRange([&](const TaintRange& range) {
+        const char16_t* side = range.end() <= leftLength     ? u"L"
+                               : range.begin() >= leftLength ? u"R"
+                                                             : u"LR";
+        return JS::TaintOperationConcatWithSide(op, side);
+      });
+    } else {
+      str->taint().extend(op);
+    }
   }
 
   return str;
