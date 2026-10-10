@@ -483,31 +483,43 @@ bool Base64Encode(JSContext* cx, JS::Handle<JS::Value> val,
 bool Base64Decode(JSContext* cx, JS::Handle<JS::Value> val,
                   JS::MutableHandle<JS::Value> out);
 
+// Foxhound: the taint a JS string converted from |aStr| should carry. Taint
+// on the string object takes precedence over taint on its shared buffer.
+template <typename T>
+inline const StringTaint& StringTaintForJS(const T& aStr) {
+  if (aStr.isTainted()) {
+    return aStr.Taint();
+  }
+  if (auto* buf = aStr.GetStringBuffer()) {
+    return buf->Taint();
+  }
+  return aStr.Taint();
+}
+
 // Convert an nsAString to jsval, returning true on success.
 [[nodiscard]] inline bool NonVoidStringToJsval(JSContext* cx,
                                                const nsAString& readable,
                                                JS::MutableHandleValue vp) {
   uint32_t length = readable.Length();
-  if (readable.IsLiteral()) {
-    return XPCStringConvert::StringLiteralToJSVal(cx, readable.BeginReading(),
-                                                  length, readable.Taint(), vp);
-  }
-  if (auto* buf = readable.GetStringBuffer()) {
-    if (!XPCStringConvert::UCStringBufferToJSVal(cx, buf, length, vp)) {
-      return false;
+  // Foxhound: tainted strings are copied so the taint is never set on a
+  // JSString shared through the ExternalStringCache.
+  const StringTaint& taint = StringTaintForJS(readable);
+  if (!taint.hasTaint()) {
+    if (readable.IsLiteral()) {
+      return XPCStringConvert::StringLiteralToJSVal(
+          cx, readable.BeginReading(), length, EmptyTaint, vp);
     }
-    if (readable.isTainted()) {
-      JS_SetTaint(cx, vp, readable.Taint());
+    if (auto* buf = readable.GetStringBuffer()) {
+      return XPCStringConvert::UCStringBufferToJSVal(cx, buf, length, vp);
     }
-    return true;
   }
   // blech, have to copy.
   JSString* str = JS_NewUCStringCopyN(cx, readable.BeginReading(), length);
   if (!str) {
     return false;
   }
-  if (readable.isTainted()) {
-    JS_SetStringTaint(cx, str, readable.Taint());
+  if (taint.hasTaint()) {
+    JS_SetStringTaint(cx, str, taint);
   }
   vp.setString(str);
   return true;
@@ -517,26 +529,24 @@ bool Base64Decode(JSContext* cx, JS::Handle<JS::Value> val,
 [[nodiscard]] inline bool NonVoidLatin1StringToJsval(
     JSContext* cx, const nsACString& latin1, JS::MutableHandleValue vp) {
   uint32_t length = latin1.Length();
-  if (latin1.IsLiteral()) {
-    return XPCStringConvert::StringLiteralToJSVal(
-        cx, reinterpret_cast<const JS::Latin1Char*>(latin1.BeginReading()),
-        length, latin1.Taint(), vp);
-  }
-  if (auto* buf = latin1.GetStringBuffer()) {
-    if (!XPCStringConvert::Latin1StringBufferToJSVal(cx, buf, length, vp)) {
-      return false;
+  // Foxhound: see NonVoidStringToJsval.
+  const StringTaint& taint = StringTaintForJS(latin1);
+  if (!taint.hasTaint()) {
+    if (latin1.IsLiteral()) {
+      return XPCStringConvert::StringLiteralToJSVal(
+          cx, reinterpret_cast<const JS::Latin1Char*>(latin1.BeginReading()),
+          length, EmptyTaint, vp);
     }
-    if (latin1.isTainted()) {
-      JS_SetTaint(cx, vp, latin1.Taint());
+    if (auto* buf = latin1.GetStringBuffer()) {
+      return XPCStringConvert::Latin1StringBufferToJSVal(cx, buf, length, vp);
     }
-    return true;
   }
   JSString* str = JS_NewStringCopyN(cx, latin1.BeginReading(), length);
   if (!str) {
     return false;
   }
-  if (latin1.isTainted()) {
-    JS_SetStringTaint(cx, str, latin1.Taint());
+  if (taint.hasTaint()) {
+    JS_SetStringTaint(cx, str, taint);
   }
   vp.setString(str);
   return true;
@@ -547,26 +557,24 @@ bool Base64Decode(JSContext* cx, JS::Handle<JS::Value> val,
                                                    const nsACString& utf8,
                                                    JS::MutableHandleValue vp) {
   uint32_t length = utf8.Length();
-  if (utf8.IsLiteral()) {
-    return XPCStringConvert::UTF8StringLiteralToJSVal(
-        cx, JS::UTF8Chars(utf8.BeginReading(), length), utf8.Taint(), vp);
-  }
-  if (auto* buf = utf8.GetStringBuffer()) {
-    if (!XPCStringConvert::UTF8StringBufferToJSVal(cx, buf, length, vp)) {
-      return false;
+  // Foxhound: see NonVoidStringToJsval.
+  const StringTaint& taint = StringTaintForJS(utf8);
+  if (!taint.hasTaint()) {
+    if (utf8.IsLiteral()) {
+      return XPCStringConvert::UTF8StringLiteralToJSVal(
+          cx, JS::UTF8Chars(utf8.BeginReading(), length), EmptyTaint, vp);
     }
-    if (utf8.isTainted()) {
-      JS_SetTaint(cx, vp, utf8.Taint());
+    if (auto* buf = utf8.GetStringBuffer()) {
+      return XPCStringConvert::UTF8StringBufferToJSVal(cx, buf, length, vp);
     }
-    return true;
   }
   JSString* str =
       JS_NewStringCopyUTF8N(cx, JS::UTF8Chars(utf8.BeginReading(), length));
   if (!str) {
     return false;
   }
-  if (utf8.isTainted()) {
-    JS_SetStringTaint(cx, str, utf8.Taint());
+  if (taint.hasTaint()) {
+    JS_SetStringTaint(cx, str, taint);
   }
   vp.setString(str);
   return true;
