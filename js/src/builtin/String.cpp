@@ -513,6 +513,20 @@ static bool str_escape(JSContext* cx, unsigned argc, Value* vp) {
 
   // Return input if no characters need to be escaped.
   if (newLength == str->length()) {
+    // Foxhound: hand back a copy when there is taint to carry, so the operation
+    // is recorded and the input is left alone. Escape() leaves newtaint empty
+    // when it appends nothing, so take the taint from the copy itself.
+    if (str->isTainted()) {
+      Rooted<JSString*> res(cx, NewDependentString(cx, str, 0, str->length()));
+      if (!res) {
+        return false;
+      }
+      // Foxhound: build the operation first, as it allocates.
+      TaintOperation op = TaintOperationFromContext(cx, "escape", str);
+      res->taint().extend(std::move(op));
+      args.rval().setString(res);
+      return true;
+    }
     args.rval().setString(str);
     return true;
   }
@@ -690,9 +704,16 @@ static bool str_unescape(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   // Step 6.
-  JSLinearString* result;
+  Rooted<JSLinearString*> result(cx);
   if (!sb.empty()) {
     result = sb.finishString();
+    if (!result) {
+      return false;
+    }
+  } else if (newtaint.hasTaint()) {
+    // Foxhound: nothing was unescaped. Copy the input rather than returning it,
+    // so setting the taint below does not record the operation on the input.
+    result = NewDependentString(cx, str, 0, str->length());
     if (!result) {
       return false;
     }
@@ -1275,19 +1296,22 @@ static JSLinearString* ToLowerCaseInternal(JSContext* cx, JSLinearString* str) {
 
 template <typename CharT>
 static JSLinearString* ToLowerCase(JSContext* cx, JSLinearString* str) {
-  JSLinearString* res = ToLowerCaseInternal<CharT>(cx, str);
-  if (res && str->isTainted()) {
-    if (res == str) {
-      res = NewDependentString(cx, str, 0, str->length());
+  // Foxhound: rooted because NewDependentString and the taint operation both
+  // allocate, which can move either string.
+  Rooted<JSLinearString*> rootedStr(cx, str);
+  Rooted<JSLinearString*> res(cx, ToLowerCaseInternal<CharT>(cx, str));
+  if (res && rootedStr->isTainted()) {
+    if (res.get() == rootedStr.get()) {
+      res = NewDependentString(cx, rootedStr, 0, rootedStr->length());
       if (!res) {
         return nullptr;
       }
     }
-    SafeStringTaint taint(str->taint());
-    taint.extend(TaintOperationFromContextJSString(cx, "toLowerCase", str));
+    SafeStringTaint taint(rootedStr->taint());
+    taint.extend(TaintOperationFromContext(cx, "toLowerCase", rootedStr));
     res->setTaint(taint);
   }
-  return res;
+  return res.get();
 }
 
 JSLinearString* js::StringToLowerCase(JSContext* cx, JSString* string) {
@@ -1414,9 +1438,19 @@ static JSLinearString* TransformCase(JSContext* cx, Handle<JSString*> string,
     locale = CaseMappingLocale(defaultLocale.language());
   }
 
+  // Foxhound: the name of the method that was called, recorded on top of
+  // whatever conversion actually produced the result.
+  const char* opName = targetCase == TargetCase::Lower ? "toLocaleLowerCase"
+                                                       : "toLocaleUpperCase";
+
   // Steps 4-10.
   if (!locale) {
     // Call the default case conversion methods for language independent casing.
+    // Foxhound: these record toLowerCase/toUpperCase rather than the method the
+    // caller used. That is left alone deliberately: the inline cache for
+    // toLocale{Lower,Upper}Case attaches exactly when the default locale uses
+    // default case mapping and then calls StringToLowerCase directly, so
+    // renaming here would only hold until the script got hot.
     return targetCase == TargetCase::Lower ? StringToLowerCase(cx, string)
                                            : StringToUpperCase(cx, string);
   }
@@ -1445,7 +1479,19 @@ static JSLinearString* TransformCase(JSContext* cx, Handle<JSString*> string,
     return nullptr;
   }
 
-  return buffer.toString(cx);
+  // Foxhound: carry the taint over. The locale mapping is not one to one, so
+  // the ranges are approximate and clamped to the result, which is the same
+  // compromise the language independent conversions above make.
+  Rooted<JSLinearString*> result(cx, buffer.toString(cx));
+  if (!result) {
+    return nullptr;
+  }
+  if (string->isTainted()) {
+    SafeStringTaint taint(string->taint().safeSubTaint(0, result->length()));
+    taint.extend(TaintOperationFromContext(cx, opName, string));
+    result->setTaint(cx, taint);
+  }
+  return result;
 }
 #endif
 
@@ -1653,16 +1699,30 @@ static JSLinearString* ToUpperCase(JSContext* cx, JSLinearString* str) {
   using TwoByteStringChars = StringChars<char16_t>;
 
   mozilla::MaybeOneOf<Latin1StringChars, TwoByteStringChars> newChars;
+  // Foxhound: rooted because the taint operation allocates, which can move str.
+  Rooted<JSLinearString*> rootedStr(cx, str);
   SafeStringTaint taint(str->taint());
   if (taint.hasTaint()) {
-    taint.extend(TaintOperationFromContextJSString(cx, "toUpperCase", str));
+    taint.extend(TaintOperationFromContext(cx, "toUpperCase", rootedStr));
   }
 
-  const size_t length = str->length();
+  const size_t length = rootedStr->length();
   size_t resultLength;
+
+  // Foxhound: the string may turn out not to change, in which case we hand back
+  // a copy rather than the input. That has to be allocated here, as the scope
+  // below cannot allocate.
+  Rooted<JSLinearString*> unchangedResult(cx, rootedStr);
+  if (taint.hasTaint()) {
+    unchangedResult = NewDependentString(cx, rootedStr, 0, length);
+    if (!unchangedResult) {
+      return nullptr;
+    }
+  }
+
   {
     AutoCheckCannotGC nogc;
-    const CharT* chars = str->chars<CharT>(nogc);
+    const CharT* chars = rootedStr->chars<CharT>(nogc);
 
     // Most one element Latin-1 strings can be directly retrieved from the
     // static strings cache.
@@ -1711,12 +1771,11 @@ static JSLinearString* ToUpperCase(JSContext* cx, JSLinearString* str) {
     }
 
     // If no character needs to change, return the input string.
-    // Foxhound: disabled. We need to return a new string here (so we can correctly
-    // set the taint). However, we are in an AutoCheckCannotGC block, so cannot
-    // allocate a new string here.
+    // Foxhound: return the copy allocated above instead, as setting the taint
+    // on the input would record the operation on it.
     if (i == length) {
-      str->setTaint(cx, taint);
-      return str;
+      unchangedResult->setTaint(cx, taint);
+      return unchangedResult.get();
     }
 
     // The string changes when uppercased, so we must create a new string.
@@ -2423,6 +2482,22 @@ static bool str_at(JSContext* cx, unsigned argc, Value* vp) {
     return true;
   }
   MOZ_ASSERT(*index < str->length());
+
+  // Foxhound: avoid atoms here if the base string is tainted, as str_charAt
+  // does, otherwise the static string carries no taint.
+  if (str->isTainted()) {
+    str = NewDependentString(cx, str, index.value(), 1);
+    if (!str) {
+      return false;
+    }
+    // Foxhound: build the operation first, as it allocates which might move
+    // str->taint()'s result.
+    TaintOperation op("at", TaintLocationFromContext(cx),
+                      { taintarg(cx, index.value()) });
+    str->taint().extend(std::move(op));
+    args.rval().setString(str);
+    return true;
+  }
 
   // Step 8.
   auto* result = cx->staticStrings().getUnitStringForElement(cx, str, *index);
@@ -4463,9 +4538,15 @@ static const JSFunctionSpec string_methods[] = {
     JS_INLINABLE_FN("lastIndexOf", str_lastIndexOf, 1, 0, StringLastIndexOf),
     JS_INLINABLE_FN("startsWith", str_startsWith, 1, 0, StringStartsWith),
     JS_INLINABLE_FN("endsWith", str_endsWith, 1, 0, StringEndsWith),
-    JS_INLINABLE_FN("trim", str_trim, 0, 0, StringTrim),
-    JS_INLINABLE_FN("trimStart", str_trimStart, 0, 0, StringTrimStart),
-    JS_INLINABLE_FN("trimEnd", str_trimEnd, 0, 0, StringTrimEnd),
+    // Foxhound: deliberately not inlinable. Warp transpiles the trim inline
+    // cache into a linearize/trim-index/substring sequence that propagates the
+    // taint but records no trim operation, so the operation disappeared from a
+    // flow as soon as the script got hot. The baseline and Ion caches go
+    // through js::StringTrim, which does record it, and so does this native.
+    // Costs roughly 2.4x on a trim microbenchmark, about 28ns per call.
+    JS_FN("trim", str_trim, 0, 0),
+    JS_FN("trimStart", str_trimStart, 0, 0),
+    JS_FN("trimEnd", str_trimEnd, 0, 0),
     JS_INLINABLE_FN("toLocaleLowerCase", str_toLocaleLowerCase, 0, 0,
                     StringToLocaleLowerCase),
     JS_INLINABLE_FN("toLocaleUpperCase", str_toLocaleUpperCase, 0, 0,
@@ -5494,9 +5575,21 @@ static bool BuildFlatMatchArray(JSContext* cx, HandleString str,
     return false;
   }
 
+  // Foxhound: the matched text has to be a slice of the subject. Reusing the
+  // pattern gives the result the pattern's taint instead of the subject's, in
+  // both directions. Allocate before setDenseInitializedLength, so a GC never
+  // sees an uninitialised element.
+  RootedString matched(cx, pattern);
+  if (str->isTainted() || pattern->isTainted()) {
+    matched = NewDependentString(cx, str, size_t(match), pattern->length());
+    if (!matched) {
+      return false;
+    }
+  }
+
   // Store a Value for each pair.
   arr->setDenseInitializedLength(1);
-  arr->initDenseElement(0, StringValue(pattern));
+  arr->initDenseElement(0, StringValue(matched));
 
   // Set the |index| property.
   arr->initSlot(RegExpRealm::MatchResultObjectIndexSlot, Int32Value(match));

@@ -62,6 +62,32 @@ function trimEndTaintTest() {
   assertNotHasTaintOperation(trimMe, 'trimEnd');
 }
 
+// Warp used to transpile the trim inline cache into an inline substring, which
+// carried the taint but recorded no operation, so a trim vanished from a flow
+// once the surrounding script got hot. Drives its own loop, since runTaintTest's
+// warmup is not enough to get the call inlined.
+function trimJITTest() {
+    var run = function(fn) {
+        var r;
+        for (var i = 0; i < 20000; i++) {
+            r = fn(taint('abc'));
+        }
+        return r;
+    };
+    var cases = [
+        ['trim', s => (' ' + s + ' ').trim()],
+        ['trimStart', s => (' ' + s).trimStart()],
+        ['trimEnd', s => (s + ' ').trimEnd()],
+    ];
+    for (var i = 0; i < cases.length; i++) {
+        var name = cases[i][0], fn = cases[i][1];
+        assertLastTaintOperationEquals(fn(taint('abc')), name);
+        assertLastTaintOperationEquals(run(fn), name);
+    }
+}
+
+trimJITTest();
+
 runTaintTest(trimTaintTest);
 runTaintTest(trimLeftTaintTest);
 runTaintTest(trimRightTaintTest);
