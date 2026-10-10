@@ -81,6 +81,7 @@ pref_groups = [
     "slider",
     "storage",
     "svg",
+    "tainting",
     "telemetry",
     "test",
     "threads",

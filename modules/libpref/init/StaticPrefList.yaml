@@ -19066,6 +19066,530 @@
   mirror: always
 
 #---------------------------------------------------------------------------
+# Prefs starting with "tainting."
+#---------------------------------------------------------------------------
+
+# Foxhound: single switch to disable taint sources and sinks completely.
+- name: tainting.active
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+# Foxhound: per-source switches, looked up by source name in
+# dom/tainting/nsTaintingUtils.cpp.
+- name: tainting.source.location.hash
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.source.location.host
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.source.location.hostname
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.source.location.href
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.source.location.origin
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.source.location.pathname
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.source.location.port
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.source.location.protocol
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.source.location.search
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.source.window.name
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.source.document.referrer
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.source.document.baseURI
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.source.document.documentURI
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.source.document.cookie
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.source.localStorage.getItem
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.source.sessionStorage.getItem
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.source.MessageEvent
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.source.PushMessageData
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.source.PushSubscription.endpoint
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.source.WebSocket.MessageEvent.data
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.source.XMLHttpRequest.response
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.source.input.value
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.source.textarea.value
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.source.script.innerHTML
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.source.document.getElementById
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.source.document.getElementsByTagName
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.source.document.getElementsByTagNameNS
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.source.document.getElementsByClassName
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.source.document.querySelector
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.source.document.querySelectorAll
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.source.document.elementFromPoint
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.source.document.elementsFromPoint
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.source.element.attribute
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.source.element.closest
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.source.XMLHttpRequest.response.json
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.source.fetch.json
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.source.fetch.text
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+# Foxhound: per-sink switches, looked up by sink name in
+# dom/tainting/nsTaintingUtils.cpp.
+- name: tainting.sink.element.after
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.sink.element.before
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.sink.EventSource
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.sink.Function.ctor
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.sink.Range.createContextualFragment.fragment
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.sink.WebSocket
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.sink.WebSocket.send
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.sink.XMLHttpRequest.open.password
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.sink.XMLHttpRequest.open.url
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.sink.XMLHttpRequest.open.username
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.sink.XMLHttpRequest.send
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.sink.XMLHttpRequest.setRequestHeader.name
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.sink.XMLHttpRequest.setRequestHeader.value
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.sink.a.href
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.sink.area.href
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.sink.document.cookie
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.sink.document.writeln
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.sink.document.write
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.sink.element.style
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.sink.embed.src
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.sink.eval
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.sink.eventHandler
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.sink.fetch.body
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.sink.fetch.url
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.sink.form.action
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.sink.iframe.src
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.sink.iframe.srcdoc
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.sink.img.src
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.sink.img.srcset
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.sink.innerHTML
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.sink.insertAdjacentHTML
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.sink.insertAdjacentText
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.sink.localStorage.setItem
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.sink.localStorage.setItem.key
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.sink.location.assign
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.sink.location.hash
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.sink.location.host
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.sink.location.href
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.sink.location.pathname
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.sink.location.port
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.sink.location.protocol
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.sink.location.replace
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.sink.location.search
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.sink.media.src
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.sink.navigator.sendBeacon.body
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.sink.navigator.sendBeacon.url
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.sink.object.data
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.sink.outerHTML
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.sink.script.innerHTML
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.sink.script.src
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.sink.script.text
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.sink.script.textContent
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.sink.sessionStorage.setItem
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.sink.sessionStorage.setItem.key
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.sink.setInterval
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.sink.setTimeout
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.sink.source
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.sink.srcset
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.sink.track.src
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.sink.window.open
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.sink.window.postMessage
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.sink.element.append
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.sink.element.prepend
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.sink.fetch.header.key
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: tainting.sink.fetch.header.value
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+#---------------------------------------------------------------------------
 # Prefs starting with "telemetry."
 #---------------------------------------------------------------------------
 

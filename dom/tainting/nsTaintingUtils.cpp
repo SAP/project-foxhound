@@ -9,7 +9,9 @@
 
 #include "nsTaintingUtils.h"
 
-#include <string>
+#include <algorithm>
+#include <iterator>
+#include <string_view>
 #include <utility>
 #include "jsfriendapi.h"
 #include "mozilla/dom/ToJSValue.h"
@@ -17,7 +19,7 @@
 #include "nsContentUtils.h"
 #include "nsString.h"
 #include "mozilla/Logging.h"
-#include "mozilla/Preferences.h"
+#include "mozilla/StaticPrefs_tainting.h"
 
 #if !defined(DEBUG) && !defined(MOZ_ENABLE_JS_DUMP)
 #  include "mozilla/StaticPrefs_browser.h"
@@ -26,27 +28,153 @@
 using namespace mozilla;
 using namespace mozilla::dom;
 
-#define PREFERENCES_TAINTING "tainting."
-#define PREFERENCES_TAINTING_ACTIVE PREFERENCES_TAINTING "active"
-#define PREFERENCES_TAINTING_SOURCE PREFERENCES_TAINTING "source."
-#define PREFERENCES_TAINTING_SINK PREFERENCES_TAINTING "sink."
-
 static LazyLogModule gTaintLog("Taint");
 
-inline bool isActive(const char* name) {
-  return Preferences::GetBool(PREFERENCES_TAINTING_ACTIVE, true) && Preferences::GetBool(name, true);
+namespace {
+
+// Maps a source or sink name, as passed to MarkTaintSource / ReportTaintSink,
+// to the static pref that enables it. Tables must be sorted by name.
+struct TaintPref {
+  std::string_view mName;
+  bool (*mIsEnabled)();
+};
+
+constexpr TaintPref kSourcePrefs[] = {
+    {"MessageEvent", StaticPrefs::tainting_source_MessageEvent},
+    {"PushMessageData", StaticPrefs::tainting_source_PushMessageData},
+    {"PushSubscription.endpoint", StaticPrefs::tainting_source_PushSubscription_endpoint},
+    {"WebSocket.MessageEvent.data", StaticPrefs::tainting_source_WebSocket_MessageEvent_data},
+    {"XMLHttpRequest.response", StaticPrefs::tainting_source_XMLHttpRequest_response},
+    {"XMLHttpRequest.response(json)", StaticPrefs::tainting_source_XMLHttpRequest_response_json},
+    {"document.baseURI", StaticPrefs::tainting_source_document_baseURI},
+    {"document.cookie", StaticPrefs::tainting_source_document_cookie},
+    {"document.documentURI", StaticPrefs::tainting_source_document_documentURI},
+    {"document.elementFromPoint", StaticPrefs::tainting_source_document_elementFromPoint},
+    {"document.elementsFromPoint", StaticPrefs::tainting_source_document_elementsFromPoint},
+    {"document.getElementById", StaticPrefs::tainting_source_document_getElementById},
+    {"document.getElementsByClassName", StaticPrefs::tainting_source_document_getElementsByClassName},
+    {"document.getElementsByTagName", StaticPrefs::tainting_source_document_getElementsByTagName},
+    {"document.getElementsByTagNameNS", StaticPrefs::tainting_source_document_getElementsByTagNameNS},
+    {"document.querySelector", StaticPrefs::tainting_source_document_querySelector},
+    {"document.querySelectorAll", StaticPrefs::tainting_source_document_querySelectorAll},
+    {"document.referrer", StaticPrefs::tainting_source_document_referrer},
+    {"element.attribute", StaticPrefs::tainting_source_element_attribute},
+    {"element.closest", StaticPrefs::tainting_source_element_closest},
+    {"fetch.json()", StaticPrefs::tainting_source_fetch_json},
+    {"fetch.text()", StaticPrefs::tainting_source_fetch_text},
+    {"input.value", StaticPrefs::tainting_source_input_value},
+    {"localStorage.getItem", StaticPrefs::tainting_source_localStorage_getItem},
+    {"location.hash", StaticPrefs::tainting_source_location_hash},
+    {"location.host", StaticPrefs::tainting_source_location_host},
+    {"location.hostname", StaticPrefs::tainting_source_location_hostname},
+    {"location.href", StaticPrefs::tainting_source_location_href},
+    {"location.origin", StaticPrefs::tainting_source_location_origin},
+    {"location.pathname", StaticPrefs::tainting_source_location_pathname},
+    {"location.port", StaticPrefs::tainting_source_location_port},
+    {"location.protocol", StaticPrefs::tainting_source_location_protocol},
+    {"location.search", StaticPrefs::tainting_source_location_search},
+    {"script.innerHTML", StaticPrefs::tainting_source_script_innerHTML},
+    {"sessionStorage.getItem", StaticPrefs::tainting_source_sessionStorage_getItem},
+    {"textarea.value", StaticPrefs::tainting_source_textarea_value},
+    {"window.name", StaticPrefs::tainting_source_window_name},
+};
+
+constexpr TaintPref kSinkPrefs[] = {
+    {"EventSource", StaticPrefs::tainting_sink_EventSource},
+    {"Function.ctor", StaticPrefs::tainting_sink_Function_ctor},
+    {"Range.createContextualFragment(fragment)", StaticPrefs::tainting_sink_Range_createContextualFragment_fragment},
+    {"WebSocket", StaticPrefs::tainting_sink_WebSocket},
+    {"WebSocket.send", StaticPrefs::tainting_sink_WebSocket_send},
+    {"XMLHttpRequest.open(password)", StaticPrefs::tainting_sink_XMLHttpRequest_open_password},
+    {"XMLHttpRequest.open(url)", StaticPrefs::tainting_sink_XMLHttpRequest_open_url},
+    {"XMLHttpRequest.open(username)", StaticPrefs::tainting_sink_XMLHttpRequest_open_username},
+    {"XMLHttpRequest.send", StaticPrefs::tainting_sink_XMLHttpRequest_send},
+    {"XMLHttpRequest.setRequestHeader(name)", StaticPrefs::tainting_sink_XMLHttpRequest_setRequestHeader_name},
+    {"XMLHttpRequest.setRequestHeader(value)", StaticPrefs::tainting_sink_XMLHttpRequest_setRequestHeader_value},
+    {"a.href", StaticPrefs::tainting_sink_a_href},
+    {"area.href", StaticPrefs::tainting_sink_area_href},
+    {"document.cookie", StaticPrefs::tainting_sink_document_cookie},
+    {"document.write", StaticPrefs::tainting_sink_document_write},
+    {"document.writeln", StaticPrefs::tainting_sink_document_writeln},
+    {"element.after", StaticPrefs::tainting_sink_element_after},
+    {"element.append", StaticPrefs::tainting_sink_element_append},
+    {"element.before", StaticPrefs::tainting_sink_element_before},
+    {"element.prepend", StaticPrefs::tainting_sink_element_prepend},
+    {"element.style", StaticPrefs::tainting_sink_element_style},
+    {"embed.src", StaticPrefs::tainting_sink_embed_src},
+    {"eval", StaticPrefs::tainting_sink_eval},
+    {"eventHandler", StaticPrefs::tainting_sink_eventHandler},
+    {"fetch.body", StaticPrefs::tainting_sink_fetch_body},
+    {"fetch.header(key)", StaticPrefs::tainting_sink_fetch_header_key},
+    {"fetch.header(value)", StaticPrefs::tainting_sink_fetch_header_value},
+    {"fetch.url", StaticPrefs::tainting_sink_fetch_url},
+    {"form.action", StaticPrefs::tainting_sink_form_action},
+    {"iframe.src", StaticPrefs::tainting_sink_iframe_src},
+    {"iframe.srcdoc", StaticPrefs::tainting_sink_iframe_srcdoc},
+    {"img.src", StaticPrefs::tainting_sink_img_src},
+    {"img.srcset", StaticPrefs::tainting_sink_img_srcset},
+    {"innerHTML", StaticPrefs::tainting_sink_innerHTML},
+    {"insertAdjacentHTML", StaticPrefs::tainting_sink_insertAdjacentHTML},
+    {"insertAdjacentText", StaticPrefs::tainting_sink_insertAdjacentText},
+    {"localStorage.setItem", StaticPrefs::tainting_sink_localStorage_setItem},
+    {"localStorage.setItem(key)", StaticPrefs::tainting_sink_localStorage_setItem_key},
+    {"location.assign", StaticPrefs::tainting_sink_location_assign},
+    {"location.hash", StaticPrefs::tainting_sink_location_hash},
+    {"location.host", StaticPrefs::tainting_sink_location_host},
+    {"location.href", StaticPrefs::tainting_sink_location_href},
+    {"location.pathname", StaticPrefs::tainting_sink_location_pathname},
+    {"location.port", StaticPrefs::tainting_sink_location_port},
+    {"location.protocol", StaticPrefs::tainting_sink_location_protocol},
+    {"location.replace", StaticPrefs::tainting_sink_location_replace},
+    {"location.search", StaticPrefs::tainting_sink_location_search},
+    {"media.src", StaticPrefs::tainting_sink_media_src},
+    {"navigator.sendBeacon(body)", StaticPrefs::tainting_sink_navigator_sendBeacon_body},
+    {"navigator.sendBeacon(url)", StaticPrefs::tainting_sink_navigator_sendBeacon_url},
+    {"object.data", StaticPrefs::tainting_sink_object_data},
+    {"outerHTML", StaticPrefs::tainting_sink_outerHTML},
+    {"script.innerHTML", StaticPrefs::tainting_sink_script_innerHTML},
+    {"script.src", StaticPrefs::tainting_sink_script_src},
+    {"script.text", StaticPrefs::tainting_sink_script_text},
+    {"script.textContent", StaticPrefs::tainting_sink_script_textContent},
+    {"sessionStorage.setItem", StaticPrefs::tainting_sink_sessionStorage_setItem},
+    {"sessionStorage.setItem(key)", StaticPrefs::tainting_sink_sessionStorage_setItem_key},
+    {"setInterval", StaticPrefs::tainting_sink_setInterval},
+    {"setTimeout", StaticPrefs::tainting_sink_setTimeout},
+    {"source", StaticPrefs::tainting_sink_source},
+    {"srcset", StaticPrefs::tainting_sink_srcset},
+    {"track.src", StaticPrefs::tainting_sink_track_src},
+    {"window.open", StaticPrefs::tainting_sink_window_open},
+    {"window.postMessage", StaticPrefs::tainting_sink_window_postMessage},
+};
+
+constexpr bool TaintPrefLess(const TaintPref& aA, const TaintPref& aB) {
+  return aA.mName < aB.mName;
 }
 
+static_assert(std::is_sorted(std::begin(kSourcePrefs), std::end(kSourcePrefs),
+                             TaintPrefLess));
+static_assert(std::is_sorted(std::begin(kSinkPrefs), std::end(kSinkPrefs),
+                             TaintPrefLess));
+
+// Names without a pref are always enabled.
+template <size_t N>
+bool IsTaintPrefEnabled(const TaintPref (&aPrefs)[N], std::string_view aName) {
+  const TaintPref* it = std::lower_bound(
+      std::begin(aPrefs), std::end(aPrefs), aName,
+      [](const TaintPref& aPref, std::string_view aKey) {
+        return aPref.mName < aKey;
+      });
+  return it == std::end(aPrefs) || it->mName != aName || it->mIsEnabled();
+}
+
+}  // namespace
+
 inline bool isSinkActive(const char* name) {
-  std::string s(PREFERENCES_TAINTING_SINK);
-  s.append(name);
-  return isActive(s.c_str());
+  return StaticPrefs::tainting_active() && IsTaintPrefEnabled(kSinkPrefs, name);
 }
 
 inline bool isSourceActive(const char* name) {
-  std::string s(PREFERENCES_TAINTING_SOURCE);
-  s.append(name);
-  return isActive(s.c_str());
+  return StaticPrefs::tainting_active() && IsTaintPrefEnabled(kSourcePrefs, name);
 }
 
 static TaintOperation GetTaintOperation(JSContext *cx, const char* name)
