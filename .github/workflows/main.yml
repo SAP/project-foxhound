@@ -93,6 +93,26 @@ jobs:
           cat ./jstest_stderr.txt
           cat ./jstest_output.md >> $GITHUB_STEP_SUMMARY
 
+      # Both known failures expect strings to be stored out of line, but
+      # Foxhound's larger inline string storage (NUM_INLINE_CHARS_* in
+      # js/src/vm/StringType.h) makes them fit inline.
+      - name: JSAPI Tests
+        if:  ${{ (success() || failure()) }} # run this step even if previous step failed
+        env:
+          KNOWN_FAILURES: testStringBuffersLatin1|testExternalStringsUTF8
+        run: |
+          ./mach jsapi-tests > jsapi_output.txt 2>&1 || true
+          cat jsapi_output.txt
+          if ! grep -qE '^(Passed: ran [0-9]+ tests\.|[0-9]+ unexpected failures?\.)$' jsapi_output.txt; then
+            echo "jsapi-tests did not finish" | tee -a $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+          unexpected=$(grep '^TEST-UNEXPECTED-FAIL' jsapi_output.txt | grep -vE "^TEST-UNEXPECTED-FAIL \| (${KNOWN_FAILURES}) \|" || true)
+          if [ -n "${unexpected}" ]; then
+            { echo "### Unexpected jsapi-tests failures"; echo '```'; echo "${unexpected}"; echo '```'; } >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
       - name: Upload Report
         uses: actions/upload-artifact@v4  # upload test results
         if:  ${{ matrix.taintspew == 'false' &&  matrix.jitspew == 'false' && (success() || failure()) }} # run this step even if previous step failed
