@@ -1,0 +1,31 @@
+<!DOCTYPE HTML>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Check repeated reads of a DOM string do not share taint</title>
+    <script src="/tests/SimpleTest/SimpleTest.js"></script>
+    <link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
+    <script>
+
+      // Each location.href read converts the same characters to a JS string,
+      // which used to return a cached JSString carrying another read's taint.
+      add_task(async function test_location_href_reads() {
+        let tainted = location.href;
+        check_tainted(tainted);
+
+        await SpecialPowers.pushPrefEnv({ set: [["tainting.source.location.href", false]] });
+        let untainted = location.href;
+        check_untainted(untainted);
+        check_tainted(tainted);
+
+        await SpecialPowers.popPrefEnv();
+        let retainted = location.href;
+        check_tainted(retainted);
+        check_untainted(untainted);
+      });
+
+    </script>
+  </head>
+  <body>
+  </body>
+</html>

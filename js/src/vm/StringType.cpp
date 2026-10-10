@@ -2422,7 +2422,8 @@ MOZ_ALWAYS_INLINE JSLinearString* ExternalStringCache::lookupImpl(
 
   for (size_t i = 0; i < NumEntries; i++) {
     JSLinearString* str = entries_[i];
-    if (!str || str->length() != len) {
+    // Foxhound: a tainted string must not be handed out for a new conversion.
+    if (!str || str->length() != len || str->isTainted()) {
       continue;
     }
 
@@ -2482,7 +2483,8 @@ MOZ_ALWAYS_INLINE JSInlineString* ExternalStringCache::lookupInlineLatin1Impl(
 
   for (size_t i = 0; i < NumEntries; i++) {
     JSInlineString* str = inlineLatin1Entries_[i];
-    if (!str || str->length() != len) {
+    // Foxhound: a tainted string must not be handed out for a new conversion.
+    if (!str || str->length() != len || str->isTainted()) {
       continue;
     }
 
