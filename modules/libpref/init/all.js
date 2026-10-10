@@ -4150,6 +4150,12 @@ pref("general.smoothScroll", true, sticky);
 // Add a single switch to disable tainting completely
 pref("tainting.active", true);
 
+// Don't treat reads made by privileged (chrome/system) script as taint sources.
+// Browser UI has no attacker-controlled input, so those flows are always false
+// positives. Sinks are unaffected: a flow from content into privileged code is
+// still reported.
+pref("tainting.skipChromeSources", true);
+
 
 // Sources
 
