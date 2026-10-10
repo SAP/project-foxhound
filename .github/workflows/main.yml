@@ -93,8 +93,9 @@ jobs:
           cat ./jstest_stderr.txt
           cat ./jstest_output.md >> $GITHUB_STEP_SUMMARY
 
-      # Both known failures expect strings to be stored out of line, but the
-      # extra taint field in JSString makes them fit inline.
+      # Both known failures expect strings to be stored out of line, but
+      # Foxhound's larger inline string storage (NUM_INLINE_CHARS_* in
+      # js/src/vm/StringType.h) makes them fit inline.
       - name: JSAPI Tests
         if:  ${{ (success() || failure()) }} # run this step even if previous step failed
         env:
