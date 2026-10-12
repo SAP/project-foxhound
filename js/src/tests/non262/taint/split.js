@@ -32,6 +32,19 @@ function strSplitTestRegex() {
     // Test regex string splitting
     parts = str.split(/\s/);
     assertEqualTaint(parts[1], b);
+    assertLastTaintOperationEquals(parts[1], 'split');
+    assertNotHasTaintOperation(str, 'split');
+
+    // The regexp path used to record no operation at all, unlike the string
+    // separator path.
+    parts = str.split(/ta/);
+    assertLastTaintOperationEquals(parts[1], 'split');
+
+    // Same for a user-defined @@split. It has to hand back a new string: the
+    // operation is recorded on whatever it returns, so a splitter returning the
+    // subject itself would record on the subject.
+    var splitter = { [Symbol.split](s) { return [s.substring(0)]; } };
+    assertLastTaintOperationEquals(str.split(splitter)[0], 'split');
     assertNotHasTaintOperation(str, 'split');
 }
 

@@ -12,6 +12,12 @@ function charAtTest() {
     assertTainted(str[index]);
     assertTainted(str[index.toString()]);
 
+    // at() used to hand back a static string, which carries no taint.
+    assertTainted(str.at(index));
+    assertLastTaintOperationEquals(str.at(index), 'at');
+    assertLastTaintOperationEquals(str.at(), 'at');
+    assertTainted(str.at(index - str.length));
+
     // Test other methods that can be used to access single characters.
     assertTainted(str.substr(index, 1));
     assertTainted(str.substring(index, index+1));
