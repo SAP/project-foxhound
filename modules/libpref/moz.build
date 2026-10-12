@@ -45,6 +45,7 @@ pref_groups = [
     "extensions",
     "fission",
     "font",
+    "foxhound",
     "full_screen_api",
     "general",
     "geo",

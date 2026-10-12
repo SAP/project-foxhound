@@ -22,13 +22,13 @@
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/ipc/URIUtils.h"
 #include "mozilla/ScopeExit.h"
+#include "mozilla/StaticPrefs_foxhound.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/TextUtils.h"
 #include "nsContentUtils.h"
 #include "prprf.h"
 #include "nsReadableUtils.h"
 #include "mozilla/net/MozURL_ffi.h"
-#include "mozilla/Preferences.h"
 #include "mozilla/TextUtils.h"
 #include "mozilla/Utf8.h"
 #include "nsIClassInfoImpl.h"
@@ -109,9 +109,9 @@ int32_t nsStandardURL::nsSegmentEncoder::EncodeSegmentCount(
     return 0;
   }
 
-  // Foxhound: check whether to encode URL
-  bool encodeURL = NS_IsMainThread() ? Preferences::GetBool("taintfox.escapeURL", false) : true;
-  if (!encodeURL) {
+  // Foxhound: check whether to encode URL. The mirror is atomic, so this is
+  // safe on the socket thread too -- no NS_IsMainThread() special case needed.
+  if (!StaticPrefs::foxhound_escapeURL()) {
     aMask |= esc_Never;
   }
 
