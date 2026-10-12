@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>
+      Check that a short string literal in code compiled from a tainted source
+      still works as a property key.
+    </title>
+    <script src="/tests/SimpleTest/SimpleTest.js"></script>
+    <link rel="stylesheet" href="/tests/SimpleTest/test.css" />
+
+    <script type="text/javascript">
+      // Reading a script element's text is a taint source, so a template engine
+      // that compiles a template out of the page -- Handlebars and every other
+      // engine that keeps templates in <script> -- compiles it from a tainted
+      // string, and every string literal in the generated function is tainted
+      // too. A one or two character literal used as a computed property key used
+      // to resolve to undefined there, because the frontend minted a second atom
+      // holding the same characters as the canonical static string and property
+      // lookup compares atoms by identity. Handlebars emits helpers["if"], so the
+      // page simply stopped rendering.
+      function taintedFn(params, body) {
+        return new Function(params, String.tainted(body));
+      }
+
+      add_task(async function test_tiny_literal_key_resolves() {
+        const obj = { a: 1, xy: 2, if: 3, abc: 4 };
+        // One and two character keys are the static string range, which is what
+        // regressed; the longer ones are controls that always worked.
+        SimpleTest.is(taintedFn("o", "return o['a'];")(obj), 1, "one character key");
+        SimpleTest.is(taintedFn("o", "return o['xy'];")(obj), 2, "two character key");
+        SimpleTest.is(taintedFn("o", "return o['if'];")(obj), 3, "two character keyword key");
+        SimpleTest.is(taintedFn("o", "return o['abc'];")(obj), 4, "three character key");
+      });
+
+      // The two halves have to agree: a property written through a tainted
+      // literal must be the same property untainted code reads, or the object
+      // silently grows a second entry that only tainted code can see.
+      add_task(async function test_key_matches_untainted_code() {
+        const written = {};
+        taintedFn("o", "o['xy'] = 7;")(written);
+        SimpleTest.is(written.xy, 7, "untainted code reads what a tainted literal wrote");
+
+        const plain = { xy: 8 };
+        SimpleTest.is(
+          taintedFn("o", "return o['xy'];")(plain),
+          8,
+          "a tainted literal reads what untainted code wrote"
+        );
+      });
+
+      // The fix resolves the key to the canonical atom but must not strip the
+      // taint from the literal itself, which is the whole point of tracking it
+      // through eval'd source.
+      add_task(async function test_literal_keeps_its_taint() {
+        const literal = taintedFn("", "return 'xy';")();
+        SimpleTest.is(literal, "xy", "the literal still has its characters");
+        SimpleTest.ok(
+          literal.taint.length > 0,
+          "a tiny literal compiled from tainted source is still tainted"
+        );
+      });
+
+      // Reaching the key through a variable took a different path and always
+      // worked, so it pins the behaviour the inline form has to match.
+      add_task(async function test_key_via_variable_still_works() {
+        const obj = { xy: 5 };
+        SimpleTest.is(
+          taintedFn("o", "var k = 'xy'; return o[k];")(obj),
+          5,
+          "a tainted key held in a variable resolves"
+        );
+      });
+    </script>
+  </head>
+
+  <body></body>
+</html>
