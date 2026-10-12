@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>
+      Check that a truncated taint operation argument is a prefix of the real
+      operand, and that the only truncation point is the documented cap.
+    </title>
+    <script src="/tests/SimpleTest/SimpleTest.js"></script>
+    <link rel="stylesheet" href="/tests/SimpleTest/test.css" />
+
+    <script type="text/javascript">
+      // String arguments recorded into a taint operation are truncated at
+      // DEFAULT_CAP characters unless the build enables --enable-taint-full-args.
+      // Either way a consumer splices recorded operands back together, so what it
+      // must be able to rely on is that a recorded operand is a *prefix* of the
+      // real one and nothing else: a head+tail splice, an ellipsis marker or an
+      // encoding-mangled copy all read as a shorter genuine string and silently
+      // move the payload into a different parse context.
+      //
+      // These assertions hold in both configurations on purpose, so the test does
+      // not have to know how the build was configured.
+      const DEFAULT_CAP = 128;
+
+      // flow[0] is the most recent operation (check_taint_source reads the source
+      // at flow[flow.length-1]). Read it off `.taint` directly: handing a tainted
+      // string to a function records a `function` op that would become the head.
+      function concatOp(taint) {
+        SimpleTest.ok(taint.length > 0, "the concatenated value must be tainted");
+        const op = taint[0].flow[0];
+        SimpleTest.is(op.operation, "concat", "flow head must be the concat");
+        return op;
+      }
+
+      function assertRecordedOperand(recorded, real, label) {
+        SimpleTest.ok(
+          typeof recorded === "string" && recorded.length > 0,
+          `${label}: an operand must be recorded`
+        );
+        SimpleTest.ok(
+          recorded.length <= real.length,
+          `${label}: recorded operand cannot be longer than the real one ` +
+            `(${recorded.length} vs ${real.length})`
+        );
+        SimpleTest.is(
+          recorded,
+          real.slice(0, recorded.length),
+          `${label}: recorded operand must be a prefix of the real one`
+        );
+        if (recorded.length < real.length) {
+          SimpleTest.is(
+            recorded.length,
+            DEFAULT_CAP,
+            `${label}: the only truncation point is the cap`
+          );
+        }
+      }
+
+      add_task(async function test_short_operand_recorded_whole() {
+        // Below the cap nothing is truncated in any configuration.
+        const lhs = "a".repeat(10);
+        const op = concatOp((String.tainted(lhs) + "X").taint);
+        SimpleTest.is(op.arguments[0], lhs, "a short operand is recorded whole");
+        SimpleTest.is(op.arguments[1], "X", "the untainted operand too");
+      });
+
+      add_task(async function test_operand_on_the_cap_is_a_prefix() {
+        // Well past the cap: truncated to DEFAULT_CAP by default, whole with
+        // --enable-taint-full-args. Either way it must be a clean prefix.
+        const lhs = "abcdefghij".repeat(40); // 400 chars
+        const op = concatOp((String.tainted(lhs) + "X").taint);
+        assertRecordedOperand(op.arguments[0], lhs, "tainted lhs");
+      });
+
+      add_task(async function test_untainted_operand_is_a_prefix_too() {
+        // The untracked side is recorded through the same path and is what a
+        // consumer text-anchors against, so it carries the same requirement.
+        const rhs = "0123456789".repeat(40); // 400 chars
+        const op = concatOp((String.tainted("seed") + rhs).taint);
+        assertRecordedOperand(op.arguments[1], rhs, "untainted rhs");
+      });
+
+      add_task(async function test_no_ellipsis_marker() {
+        // An earlier truncation strategy recorded head + "...." + tail. That is
+        // indistinguishable from a genuine string containing "...." and breaks the
+        // prefix rule the assertions above depend on, so assert it is not back.
+        const lhs = "x".repeat(400);
+        const op = concatOp((String.tainted(lhs) + "X").taint);
+        SimpleTest.ok(
+          !op.arguments[0].includes("...."),
+          "a truncated operand must not carry an ellipsis marker"
+        );
+      });
+    </script>
+  </head>
+
+  <body></body>
+</html>

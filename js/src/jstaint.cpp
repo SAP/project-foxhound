@@ -6,6 +6,7 @@
 #include "mozilla/Sprintf.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <iomanip>
 #include <iostream>
 #include <locale>
@@ -28,7 +29,17 @@
 
 using namespace JS;
 
+// Foxhound: string arguments are truncated when recorded into a taint operation,
+// which makes a cut operand indistinguishable from a genuine max_length-character
+// one. A consumer that splices recorded operands back together is then unsound at
+// those positions: a cut inside a start tag leaves markup open that the real value
+// closed. --enable-taint-full-args lifts the limit for crawls that need faithful
+// operands; it is off by default because it grows every recorded flow.
+#ifdef TAINT_FULL_ARGS
+const size_t max_length = SIZE_MAX;
+#else
 const size_t max_length = 128;
+#endif
 const size_t copy_length = (max_length >> 1) - 2;
 
 static std::u16string ascii2utf16(const std::string& str) {
