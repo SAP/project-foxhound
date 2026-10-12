@@ -17922,6 +17922,12 @@ void CodeGenerator::emitMaybeAtomizeSlot(LInstruction* ins, Register stringReg,
                     Address(stringReg, JSString::offsetOfFlags()),
                     Imm32(StringFlags::ATOM_BIT), ool->rejoin());
 
+  // Foxhound: leave tainted strings alone, the atom stored back into the slot
+  // would drop the taint.
+  masm.branchPtr(Assembler::NotEqual,
+                 Address(stringReg, JSString::offsetOfTaint()),
+                 ImmPtr(nullptr), ool->rejoin());
+
   masm.branchTest32(Assembler::Zero,
                     Address(stringReg, JSString::offsetOfFlags()),
                     Imm32(StringFlags::ATOM_REF_BIT), ool->entry());
