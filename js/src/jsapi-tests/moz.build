@@ -137,6 +137,7 @@ UNIFIED_SOURCES += [
     "testSparseBitmap.cpp",
     "testStencil.cpp",
     "testStringBuffers.cpp",
+    "testStringBufferTaint.cpp",
     "testStringBuilder.cpp",
     "testStringIsArrayIndex.cpp",
     "testStructuredClone.cpp",
