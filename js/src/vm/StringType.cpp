@@ -1439,7 +1439,10 @@ JSString* js::ConcatStrings(
   
   JSString* str = ConcatStringsQuiet<allowGC>(cx, left, right, heap);
 
-  if (str && str->taint().hasTaint()) {
+  // Foxhound: with an empty operand the result is the other operand itself;
+  // recording would write onto the input string. The JIT's concat paths return
+  // the operand unchanged as well.
+  if (str && str->taint().hasTaint() && str != left && str != right) {
      str->taint().extend(op);
   }
 
