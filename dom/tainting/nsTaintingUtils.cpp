@@ -30,6 +30,7 @@ using namespace mozilla::dom;
 #define PREFERENCES_TAINTING_ACTIVE PREFERENCES_TAINTING "active"
 #define PREFERENCES_TAINTING_SOURCE PREFERENCES_TAINTING "source."
 #define PREFERENCES_TAINTING_SINK PREFERENCES_TAINTING "sink."
+#define PREFERENCES_TAINTING_SKIP_CHROME PREFERENCES_TAINTING "skipChromeSources"
 
 static LazyLogModule gTaintLog("Taint");
 
@@ -43,7 +44,29 @@ inline bool isSinkActive(const char* name) {
   return isActive(s.c_str());
 }
 
+// Taint tracking exists to follow attacker-controlled data through web content.
+// Privileged browser code has no such input, so a flow found there is a false
+// positive by construction -- and the browser's own UI scripts trip plenty of
+// them (tabgroup-menu.js, moz-button-group.mjs and browser-sync.js each report
+// several on every startup), which costs a console pair per report and buries
+// real content findings.
+//
+// Only *sources* are suppressed. Sinks stay active, so a flow that originates in
+// content and is later handed to privileged code is still reported.
+inline bool isChromeCaller() {
+  JSContext* cx = nsContentUtils::GetCurrentJSContext();
+  if (!cx) {
+    // No JSAPI on the stack: not a script-initiated read, so nothing to skip.
+    return false;
+  }
+  return nsContentUtils::ThreadsafeIsSystemCaller(cx);
+}
+
 inline bool isSourceActive(const char* name) {
+  if (Preferences::GetBool(PREFERENCES_TAINTING_SKIP_CHROME, true) &&
+      isChromeCaller()) {
+    return false;
+  }
   std::string s(PREFERENCES_TAINTING_SOURCE);
   s.append(name);
   return isActive(s.c_str());
