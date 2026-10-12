@@ -49,7 +49,9 @@ function FUNC_NAME(
       }
 
       // Steps 12-16.
-      return S;
+      // Foxhound: return new string so the caller can record an operation
+      // without extending the taint of S itself.
+      return CopyString(S);
     }
   } else {
     // 21.2.5.2.2 RegExpBuiltinExec, step 8.
@@ -68,7 +70,8 @@ function FUNC_NAME(
     }
 
     // Steps 13-17.
-    return S;
+    // Foxhound: return new string
+    return CopyString(S);
   }
 #else
   // Step 12.a.
@@ -82,7 +85,8 @@ function FUNC_NAME(
     }
 
     // Steps 13-17.
-    return S;
+    // Foxhound: return new string
+    return CopyString(S);
   }
 #endif
 

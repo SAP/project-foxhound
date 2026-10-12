@@ -12,6 +12,19 @@ set_define("TAINT_DEBUG", taint_debug)
 set_config("TAINT_DEBUG", taint_debug)
 
 option(
+    "--enable-taint-full-args",
+    help="Record taint operation string arguments in full instead of truncating them"
+)
+
+@depends("--enable-taint-full-args")
+def taint_full_args(value):
+    if value:
+        return True
+
+set_define("TAINT_FULL_ARGS", taint_full_args)
+set_config("TAINT_FULL_ARGS", taint_full_args)
+
+option(
     "--enable-taint-e2e-debug",
     help="Enable end to end tainting debug prints"
 )
