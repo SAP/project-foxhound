@@ -146,18 +146,20 @@ bool js::CreateRegExpMatchResult(JSContext* cx, HandleRegExpShared re,
       arr->setDenseInitializedLength(i + 1);
       arr->initDenseElement(i, UndefinedValue());
     } else {
-      JSLinearString* str =
-          NewDependentString(cx, input, pair.start, pair.length());
+      // Foxhound: rooted, as building the taint operation below can GC
+      // before str is stored in arr.
+      Rooted<JSLinearString*> str(
+          cx, NewDependentString(cx, input, pair.start, pair.length()));
       if (!str) {
         return false;
       }
-      // Foxhound: taint propagated by NewDependentString, just need
-      // to add the operation here. Do this after adding to the rooted
-      // array to avoid GC issues.
+      // Foxhound: taint propagated by NewDependentString, just need to add the
+      // operation here. Build it first, it can GC and move str.
       if (str->taint().hasTaint()) {
-        str->taint().extend(
-          TaintOperation("RegExp.prototype.exec", TaintLocationFromContext(cx),
-                         { taintarg_jsstring_full(cx, srcStr), taintarg_jsstring(cx, str), taintarg(cx, i) }));
+        TaintOperation op("RegExp.prototype.exec", TaintLocationFromContext(cx),
+                          {taintarg_jsstring_full(cx, srcStr),
+                           taintarg_jsstring(cx, str), taintarg(cx, i)});
+        str->taint().extend(std::move(op));
       }
       arr->setDenseInitializedLength(i + 1);
       arr->initDenseElement(i, StringValue(str));

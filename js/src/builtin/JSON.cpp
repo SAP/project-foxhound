@@ -2155,8 +2155,9 @@ bool json_stringify(JSContext* cx, unsigned argc, Value* vp) {
 
     // Foxhound: Add stringify operation to taint flows.
     if (str->isTainted()) {
-      str->taint().extend(
-          TaintOperationFromContext(cx, "JSON.stringify"));
+      // Foxhound: build the operation first, it can GC and move str.
+      TaintOperation op = TaintOperationFromContext(cx, "JSON.stringify");
+      str->taint().extend(std::move(op));
     }
     args.rval().setString(str);
   } else {
