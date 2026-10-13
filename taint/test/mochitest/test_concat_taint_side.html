@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>
+      Check that a concat operation records which operand the tracked taint range
+      came from, not just that both operands were tainted.
+    </title>
+    <script src="/tests/SimpleTest/SimpleTest.js"></script>
+    <link rel="stylesheet" href="/tests/SimpleTest/test.css" />
+
+    <script type="text/javascript">
+      // A concat op records [lhs, rhs, order]. `order` used to be `tainted:L`,
+      // `tainted:R` or `tainted:LR`, and `tainted:LR` — both operands tainted, which
+      // is what a template literal splitting and rejoining a value produces — did not
+      // say which operand the range being recorded actually is. A consumer replaying
+      // the flow needs that to put the value back in its original position, and it
+      // cannot always recover it by comparing operand text: the operand may be
+      // truncated, or may never survive into the result at all.
+      //
+      // So `tainted:LR` now carries the side as well: `tainted:LR:L`, `tainted:LR:R`,
+      // or `tainted:LR:LR` for a range that spans the boundary (concat merges adjacent
+      // ranges that share a flow, so `t + t` yields a single range covering both).
+      // The single-sided markers are unchanged — they were never ambiguous.
+
+      // flow[0] is the most recent operation (check_taint_source reads the source at
+      // flow[flow.length-1]). Read it off `.taint` directly rather than passing the
+      // string to a helper: a tainted string handed to a function records a `function`
+      // op that would become the flow head instead of the concat.
+      function orderMarker(range) {
+        const op = range.flow[0];
+        SimpleTest.is(op.operation, "concat", "flow head must be the concat");
+        SimpleTest.is(op.arguments.length, 3, "concat records lhs, rhs and order");
+        return op.arguments[2];
+      }
+
+      // The side recorded on a range must agree with where that range's characters
+      // actually sit relative to the concatenation boundary. Checking the invariant
+      // rather than a fixed string keeps the test independent of how many ranges the
+      // engine chose to merge.
+      function expectedSide(range, boundary) {
+        if (range.end <= boundary) {
+          return "L";
+        }
+        if (range.begin >= boundary) {
+          return "R";
+        }
+        return "LR";
+      }
+
+      add_task(async function test_both_operands_tainted_record_their_side() {
+        const lhs = String.tainted("LEFT", "t1");
+        const rhs = String.tainted("RIGHT", "t2");
+        const joined = lhs + rhs;
+        const taint = joined.taint;
+
+        SimpleTest.ok(taint.length > 0, "the result must be tainted");
+        for (const range of taint) {
+          const marker = orderMarker(range);
+          SimpleTest.is(
+            marker,
+            `tainted:LR:${expectedSide(range, lhs.length)}`,
+            `range [${range.begin},${range.end}) records its side`
+          );
+        }
+      });
+
+      add_task(async function test_template_literal_keeps_the_value_placeable() {
+        // The shape the change exists for: a template literal splits the value out
+        // and rejoins it, so every intermediate concat has both sides tainted.
+        const n = String.tainted("1", "t1");
+        const v = String.tainted("PAYLOAD", "t2");
+        const built = `<h${n}>${v}</h${n}>`;
+        const taint = built.taint;
+
+        SimpleTest.ok(taint.length > 0, "the built string must be tainted");
+        for (const range of taint) {
+          const marker = orderMarker(range);
+          SimpleTest.ok(
+            /^tainted:(L|R|LR)(:(L|R|LR))?$/.test(marker),
+            `order marker must be well formed, got ${marker}`
+          );
+          if (marker.startsWith("tainted:LR")) {
+            SimpleTest.ok(
+              marker.split(":").length === 3,
+              `an LR marker must name a side, got ${marker}`
+            );
+          }
+        }
+      });
+
+      add_task(async function test_range_spanning_the_boundary() {
+        // `t + t`: both operands are the same string, so the two halves share a taint
+        // flow and concat merges them into one range covering the whole result. That
+        // range came from both operands and must say so rather than claim one side.
+        const t = String.tainted("AB", "t1");
+        const doubled = t + t;
+        const taint = doubled.taint;
+
+        SimpleTest.ok(taint.length > 0, "the result must be tainted");
+        for (const range of taint) {
+          SimpleTest.is(
+            orderMarker(range),
+            `tainted:LR:${expectedSide(range, t.length)}`,
+            `range [${range.begin},${range.end}) records its side`
+          );
+        }
+      });
+
+      add_task(async function test_single_sided_markers_unchanged() {
+        // Only the ambiguous LR case gains a side. A consumer parsing the existing
+        // markers must keep working, so assert these are untouched.
+        SimpleTest.is(
+          orderMarker((String.tainted("x", "t1") + "plain").taint[0]),
+          "tainted:L",
+          "a tainted left operand alone still records tainted:L"
+        );
+        SimpleTest.is(
+          orderMarker(("plain" + String.tainted("x", "t1")).taint[0]),
+          "tainted:R",
+          "a tainted right operand alone still records tainted:R"
+        );
+      });
+    </script>
+  </head>
+
+  <body></body>
+</html>
