@@ -1,0 +1,97 @@
+<!DOCTYPE HTML>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Check tainting static prefs toggle sources and sinks at runtime</title>
+    <script src="/tests/SimpleTest/SimpleTest.js"></script>
+    <link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
+    <script>
+
+      const MARKER = "insertAdjacentText";
+
+      // Runs `trigger`, then fires the marker sink and resolves with the sink
+      // names reported before the marker arrived.
+      function collectSinkReports(trigger) {
+        return new Promise(resolve => {
+          let reported = [];
+          let listener = report => {
+            let ops = report.detail.str.taint[0].flow.map(op => op.operation);
+            if (ops.includes(MARKER)) {
+              removeEventListener("__taintreport", listener);
+              resolve(reported);
+              return;
+            }
+            reported.push(...ops);
+          };
+          addEventListener("__taintreport", listener);
+          trigger();
+          document.createElement("p").insertAdjacentText("afterbegin", String.tainted("marker"));
+        });
+      }
+
+      function setInnerHTML() {
+        document.createElement("div").innerHTML = String.tainted("hello");
+      }
+
+      function openXHR() {
+        let xhr = new XMLHttpRequest();
+        xhr.open("GET", String.tainted("payload.sjs"));
+      }
+
+      add_task(async function test_sink_pref() {
+        ok((await collectSinkReports(setInnerHTML)).includes("innerHTML"), "innerHTML reported by default");
+
+        await SpecialPowers.pushPrefEnv({ set: [["tainting.sink.innerHTML", false]] });
+        ok(!(await collectSinkReports(setInnerHTML)).includes("innerHTML"), "innerHTML not reported when disabled");
+
+        await SpecialPowers.popPrefEnv();
+        ok((await collectSinkReports(setInnerHTML)).includes("innerHTML"), "innerHTML reported again after re-enabling");
+      });
+
+      add_task(async function test_renamed_sink_pref() {
+        ok((await collectSinkReports(openXHR)).includes("XMLHttpRequest.open(url)"), "XMLHttpRequest.open(url) reported by default");
+
+        await SpecialPowers.pushPrefEnv({ set: [["tainting.sink.XMLHttpRequest.open.url", false]] });
+        ok(!(await collectSinkReports(openXHR)).includes("XMLHttpRequest.open(url)"), "XMLHttpRequest.open(url) not reported when disabled");
+
+        await SpecialPowers.popPrefEnv();
+      });
+
+      // Reading the same location string twice can return a cached JSString
+      // carrying the taint of the first read, so each check uses a fresh hash.
+      function freshHash(value) {
+        location.hash = value;
+        return location.hash;
+      }
+
+      add_task(async function test_source_pref() {
+        check_tainted(freshHash("enabled"));
+
+        await SpecialPowers.pushPrefEnv({ set: [["tainting.source.location.hash", false]] });
+        check_untainted(freshHash("disabled"));
+
+        await SpecialPowers.popPrefEnv();
+        check_tainted(freshHash("reenabled"));
+      });
+
+      add_task(async function test_active_pref() {
+        await SpecialPowers.pushPrefEnv({ set: [["tainting.active", false]] });
+        check_untainted(freshHash("inactive"));
+
+        let reported = null;
+        let listener = () => { reported = true; };
+        addEventListener("__taintreport", listener);
+        setInnerHTML();
+        await new Promise(resolve => SimpleTest.executeSoon(resolve));
+        removeEventListener("__taintreport", listener);
+        ok(!reported, "No sink reported when tainting.active is false");
+
+        await SpecialPowers.popPrefEnv();
+        check_tainted(freshHash("active"));
+      });
+
+    </script>
+  </head>
+  <body>
+  </body>
+</html>
