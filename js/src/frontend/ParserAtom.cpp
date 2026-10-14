@@ -168,12 +168,12 @@ JSString* ParserAtom::instantiateString(JSContext* cx, FrontendContext* fc,
     str = NewStringCopyNDontDeflateNonStaticValidLength<CanGC>(
         cx, twoByteChars(), length(), gc::Heap::Tenured);
   }
+  if (!str) {
+    return nullptr;
+  }
   if (taintDataSize_ > 0) {
     std::string taintData(taint(), taintDataSize_);
     str->setTaint(cx, ParseStringTaint(taintData));
-  }
-  if (!str) {
-    return nullptr;
   }
   if (!atomCache.setAtomAt(fc, index, str)) {
     return nullptr;
