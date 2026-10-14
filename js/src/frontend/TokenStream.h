@@ -1229,7 +1229,12 @@ class SourceUnits {
   /** Next char to get. */
   const Unit* ptr;
 
-  const StringTaint& taint_;
+  /**
+   * Owning copy of the source taint. Stored by value because callers (e.g.
+   * the taintless GeneralParser constructor) may pass a temporary
+   * StringTaint that does not outlive this object.
+   */
+  SafeStringTaint taint_;
 
  public:
   SourceUnits(const Unit* units, size_t length, size_t startOffset, const StringTaint& taint)

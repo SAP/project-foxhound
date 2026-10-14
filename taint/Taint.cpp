@@ -1183,6 +1183,14 @@ bool ParseStringTaintForE2E(const std::string& input, StringTaint& taint) {
     uint32_t end = elem["end"].get<uint32_t>();
     std::string source = elem["source"].get<std::string>();
 
+    if (end <= begin) {
+#if (DEBUG_E2E_TAINTING)
+      std::cout << "Error: Invalid range, end must be greater than begin"
+                << std::endl;
+#endif
+      return false;
+    }
+
     TaintOperation op(source.c_str());
     op.setSource();
     TaintRange range = TaintRange(begin, end, TaintFlow(op));

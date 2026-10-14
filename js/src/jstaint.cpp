@@ -40,12 +40,23 @@ const size_t max_length = SIZE_MAX;
 #else
 const size_t max_length = 128;
 #endif
-const size_t copy_length = (max_length >> 1) - 2;
 
 static std::u16string ascii2utf16(const std::string& str) {
   std::u16string res;
   for (auto c : str) res.push_back(static_cast<char16_t>(c));
   return res;
+}
+
+// Copies the first len characters of str into dest.
+static void CopyPrefixChars(char16_t* dest, const JSLinearString& str,
+                            size_t len) {
+  MOZ_ASSERT(len <= str.length());
+  JS::AutoCheckCannotGC nogc;
+  if (str.hasTwoByteChars()) {
+    std::copy_n(str.twoByteChars(nogc), len, dest);
+  } else {
+    std::copy_n(str.latin1Chars(nogc), len, dest);
+  }
 }
 
 std::u16string JS::taintarg_char(JSContext* cx, const char16_t ch) {
@@ -65,6 +76,9 @@ std::u16string JS::taintarg_full(JSContext* cx, HandleString str) {
 
   js::UniquePtr<char16_t, JS::FreePolicy> buf(
       cx->pod_malloc<char16_t>(linear->length()));
+  if (!buf) {
+    return std::u16string();
+  }
   js::CopyChars(buf.get(), *linear);
   return std::u16string(buf.get(), linear->length());
 }
@@ -74,28 +88,10 @@ std::u16string JS::taintarg(JSContext* cx, HandleString str) {
     return std::u16string();
   }
 
-  size_t len = str->length();
   JSLinearString* linear = str->ensureLinear(cx);
   if (!linear) return std::u16string();
 
-  js::UniquePtr<char16_t, JS::FreePolicy> buf(cx->pod_malloc<char16_t>(len));
-  js::CopyChars(buf.get(), *linear);
-  if (len > max_length) {
-    // Foxhound was crashing after startup after copying start and end
-    // of the long strings, so disable copying here
-    // TODO: work out why windows doesn't like this...
-    // Update: this also caused issues with some URLs causing crashes
-    // I have a feeling there are some encoding/length issues
-#if 1  // defined(_WIN32)
-    return std::u16string(buf.get(), max_length);
-#else
-    std::u16string result(buf.get(), copy_length);
-    result.append(u"....");
-    result.append(std::u16string(buf.get(), len - copy_length, copy_length));
-    return result;
-#endif
-  }
-  return std::u16string(buf.get(), len);
+  return taintarg_jsstring(cx, linear);
 }
 
 std::u16string JS::taintarg_jsstring(JSContext* cx,
@@ -104,25 +100,18 @@ std::u16string JS::taintarg_jsstring(JSContext* cx,
     return std::u16string();
   }
 
-  size_t len = str->length();
+  // Foxhound was crashing after startup after copying start and end
+  // of the long strings, so disable copying here
+  // TODO: work out why windows doesn't like this...
+  // Update: this also caused issues with some URLs causing crashes
+  // I have a feeling there are some encoding/length issues
+  size_t len = std::min(str->length(), max_length);
 
   js::UniquePtr<char16_t, JS::FreePolicy> buf(cx->pod_malloc<char16_t>(len));
-  js::CopyChars(buf.get(), *str);
-  if (len > max_length) {
-    // Foxhound was crashing after startup after copying start and end
-    // of the long strings, so disable copying here
-    // TODO: work out why windows doesn't like this...
-    // Update: this also caused issues with some URLs causing crashes
-    // I have a feeling there are some encoding/length issues
-#if 1  // defined(_WIN32)
-    return std::u16string(buf.get(), max_length);
-#else
-    std::u16string result(buf.get(), copy_length);
-    result.append(u"....");
-    result.append(std::u16string(buf.get(), len - copy_length, copy_length));
-    return result;
-#endif
+  if (!buf) {
+    return std::u16string();
   }
+  CopyPrefixChars(buf.get(), *str, len);
   return std::u16string(buf.get(), len);
 }
 
@@ -143,6 +132,9 @@ std::u16string JS::taintarg_jsstring_full(JSContext* cx, JSString* const& str) {
 
   js::UniquePtr<char16_t, JS::FreePolicy> buf(
       cx->pod_malloc<char16_t>(linear->length()));
+  if (!buf) {
+    return std::u16string();
+  }
   js::CopyChars(buf.get(), *linear);
   return std::u16string(buf.get(), linear->length());
 }
