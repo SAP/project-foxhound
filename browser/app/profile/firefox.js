@@ -70,8 +70,8 @@ pref("extensions.webextensions.remote", true);
 pref("extensions.webextensions.pageActionIconDarkModeFilter.enabled", false);
 
 // Require signed add-ons by default
-pref("extensions.langpacks.signatures.required", false);
-pref("xpinstall.signatures.required", false);
+pref("extensions.langpacks.signatures.required", true);
+pref("xpinstall.signatures.required", true);
 
 // Enable data collection permissions.
 pref("extensions.dataCollectionPermissions.enabled", true);
