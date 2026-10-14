@@ -493,7 +493,7 @@ void net_FilterURIString(const nsACString& input, nsACString& result) {
   }
 
   result.Assign(Substring(newStart, newEnd));
-  result.AssignTaint(input.Taint().safeSubTaint(std::distance(newStart, start), std::distance(newEnd, end)));
+  result.AssignTaint(input.Taint().safeSubTaint(std::distance(start, newStart), std::distance(start, newEnd)));
   if (needsStrip) {
     result.StripTaggedASCII(mask);
   }
@@ -516,8 +516,15 @@ nsresult net_FilterAndEscapeURI(const nsACString& aInput, uint32_t aFlags,
                    charFilter)
           .base();
 
-  return NS_EscapeAndFilterURL(Substring(newStart, newEnd), aFlags,
-                               &aFilterMask, aResult, fallible);
+  // Foxhound: carry the rebased taint of the trimmed range into the escaper.
+  nsDependentCSubstring filtered(newStart, newEnd);
+  if (aInput.Taint().hasTaint()) {
+    filtered.AssignTaint(aInput.Taint().safeSubTaint(
+        std::distance(start, newStart), std::distance(start, newEnd)));
+  }
+
+  return NS_EscapeAndFilterURL(filtered, aFlags, &aFilterMask, aResult,
+                               fallible);
 }
 
 #if defined(XP_WIN)
