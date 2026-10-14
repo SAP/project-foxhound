@@ -1492,6 +1492,9 @@ taint_copyString(JSContext* cx, unsigned argc, Value* vp)
     }
 
     JSString* res = NewDependentString(cx, str, 0, str->length());
+    if (!res) {
+        return false;
+    }
     args.rval().setString(res);
 
     return true;
