@@ -5263,7 +5263,10 @@ JS_ReportTaintSink(JSContext* cx, JS::HandleString str, const char* sink, JS::Ha
     report = CompileFunctionUtf8(cx, emptyChain,
                                  options, "ReportTaintSink", 3,
                                  argnames, funbody, strlen(funbody));
-    MOZ_ASSERT(report);
+    if (!report) {
+      JS_ClearPendingException(cx);
+      return;
+    }
 
     // Store the compiled function into the current global object.
     JS_SetReservedSlot(global, TAINT_REPORT_FUNCTION_SLOT, ObjectValue(*report));
@@ -5278,9 +5281,15 @@ JS_ReportTaintSink(JSContext* cx, JS::HandleString str, const char* sink, JS::Ha
     return;
   }
 
+  RootedString sinkStr(cx, NewStringCopyZ<CanGC>(cx, sink));
+  if (!sinkStr) {
+    JS_ClearPendingException(cx);
+    return;
+  }
+
   JS::RootedValueArray<3> arguments(cx);
   arguments[0].setString(str);
-  arguments[1].setString(NewStringCopyZ<CanGC>(cx, sink));
+  arguments[1].setString(sinkStr);
   if (stack) {
     arguments[2].setObject(*stack);
   } else {
