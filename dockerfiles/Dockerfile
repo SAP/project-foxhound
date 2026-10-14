@@ -14,11 +14,12 @@ RUN apt-get update &&    \
 	    ccache \
 	    libnspr4-dev \
 	    software-properties-common \
-	    git 
+	    ca-certificates \
+	    git
 
 WORKDIR /usr/local/src/foxhound-build
 
-RUN GIT_SSL_NO_VERIFY=true git clone --depth=1 https://github.com/SAP/project-foxhound -b main .
+RUN git clone --depth=1 https://github.com/SAP/project-foxhound -b main .
 
 RUN ./mach bootstrap --application-choice=browser
 
