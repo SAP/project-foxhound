@@ -112,6 +112,11 @@ jobs:
     runs-on: ubuntu-22.04
     name: Build Foxhound
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
       - name: Free Disk Space
         # Inlined from https://github.com/jlumbroso/free-disk-space to avoid
         # pinning to a mutable branch name (supply-chain risk).
@@ -127,11 +132,6 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y curl python3 python3-pip python3-venv tar zip unzip git
           python3 -m pip install setuptools
-
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
 
       - name: Bootstrap
         run: |
