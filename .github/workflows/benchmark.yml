@@ -60,6 +60,8 @@ jobs:
           key: vanilla-firefox-${{ steps.upstream.outputs.commit }}-ubuntu-22.04
 
       - name: Free Disk Space
+        # Inlined from https://github.com/jlumbroso/free-disk-space to avoid
+        # pinning to a mutable branch name (supply-chain risk).
         if: steps.cache.outputs.cache-hit != 'true'
         run: |
           sudo rm -rf "${AGENT_TOOLSDIRECTORY:-/opt/hostedtoolcache}"
@@ -75,6 +77,8 @@ jobs:
           df -h
 
       - name: Set Swap Space
+        # Inlined from https://github.com/pierotofy/set-swap-space to avoid
+        # pinning to a mutable branch name (supply-chain risk).
         if: steps.cache.outputs.cache-hit != 'true'
         run: |
           sudo fallocate -l 10G /mnt/swapfile
@@ -129,6 +133,8 @@ jobs:
     name: Build Foxhound
     steps:
       - name: Free Disk Space
+        # Inlined from https://github.com/jlumbroso/free-disk-space to avoid
+        # pinning to a mutable branch name (supply-chain risk).
         run: |
           sudo rm -rf "${AGENT_TOOLSDIRECTORY:-/opt/hostedtoolcache}"
           sudo rm -rf /usr/local/lib/android
@@ -143,6 +149,8 @@ jobs:
           df -h
 
       - name: Set Swap Space
+        # Inlined from https://github.com/pierotofy/set-swap-space to avoid
+        # pinning to a mutable branch name (supply-chain risk).
         run: |
           sudo fallocate -l 10G /mnt/swapfile
           sudo chmod 600 /mnt/swapfile
