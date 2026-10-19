@@ -1,0 +1,21 @@
+name: Set Swap Space
+description: >
+  Inlined from https://github.com/pierotofy/set-swap-space — allocates and
+  activates a swap file on Ubuntu runners.
+
+inputs:
+  swap-size-gb:
+    description: Size of the swap file in gigabytes
+    required: false
+    default: '10'
+
+runs:
+  using: composite
+  steps:
+    - run: |
+        sudo fallocate -l ${{ inputs.swap-size-gb }}G /mnt/swapfile
+        sudo chmod 600 /mnt/swapfile
+        sudo mkswap /mnt/swapfile
+        sudo swapon /mnt/swapfile
+        free -h
+      shell: bash
