@@ -4,6 +4,7 @@
 #include "jstaint.h"
 
 #include "mozilla/Sprintf.h"
+#include "mozilla/Utf8.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -42,9 +43,11 @@ const size_t max_length = 128;
 #endif
 const size_t copy_length = (max_length >> 1) - 2;
 
-static std::u16string ascii2utf16(const std::string& str) {
-  std::u16string res;
-  for (auto c : str) res.push_back(static_cast<char16_t>(c));
+static std::u16string utf8ToUtf16(const char* str) {
+  size_t len = strlen(str);
+  std::u16string res(len + 1, u'\0');
+  res.resize(mozilla::ConvertUtf8toUtf16(mozilla::Span(str, len),
+                                         mozilla::Span(res.data(), res.size())));
   return res;
 }
 
@@ -296,7 +299,7 @@ TaintLocation JS::TaintLocationFromContext(JSContext* cx) {
     return cx->getFallbackTaintLocation();
   }
 
-  return TaintLocation(ascii2utf16(std::string(filename)), line, pos, next_line,
+  return TaintLocation(utf8ToUtf16(filename), line, pos, next_line,
                        next_pos, scriptStartline, hash, taintarg(cx, function));
 }
 
@@ -410,9 +413,8 @@ void JS::MarkTaintedFunctionArguments(JSContext* cx, JSFunction* function,
       int lineno = script->lineno();
       js::ScriptSource* source = script->scriptSource();
       if (source && source->filename()) {
-        std::string filename(source->filename());
-        sourceinfo =
-            ascii2utf16(filename) + u":" + ascii2utf16(std::to_string(lineno));
+        sourceinfo = utf8ToUtf16(source->filename()) + u":" +
+                     utf8ToUtf16(std::to_string(lineno).c_str());
       }
     }
   }
