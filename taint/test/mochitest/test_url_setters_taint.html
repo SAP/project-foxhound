@@ -1,0 +1,76 @@
+<!DOCTYPE HTML>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Taint propagation through URL component setters</title>
+    <script src="/tests/SimpleTest/SimpleTest.js"></script>
+    <link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
+    <script>
+      // Regression test: setting url.pathname from a tainted value must keep the
+      // taint. Previously nsStandardURL::SetFilePath rebuilt the spec from raw
+      // char* buffers and dropped it.
+      add_task(async function test_pathname_setter_tainted() {
+        const u = new URL("https://example.com/orig");
+        u.pathname = String.tainted("/injected/path");
+        check_tainted(u.pathname);
+        check_tainted(u.href);
+      });
+
+      // pathname setter on a URL whose path is just "/" (also routes through
+      // SetFilePath).
+      add_task(async function test_pathname_setter_from_root() {
+        const u = new URL("https://example.com");
+        u.pathname = String.tainted("/injected2");
+        check_tainted(u.pathname);
+      });
+
+      // pathname setter must preserve an existing tainted query/ref tail while
+      // the new (untainted) path stays untainted.
+      add_task(async function test_pathname_setter_keeps_tail() {
+        const u = new URL("https://example.com/orig?a=" + String.tainted("qv"));
+        u.pathname = "/plain";
+        check_untainted(u.pathname);
+        check_tainted(u.search);
+      });
+
+      // Regression test: setting url.host from a tainted value must keep the
+      // taint. Previously SetHostPort passed an iterator-based Substring to
+      // SetHost, dropping it (while url.hostname worked).
+      add_task(async function test_host_setter_tainted() {
+        const u = new URL("https://example.com/p");
+        u.host = String.tainted("evilhost");
+        check_tainted(u.host);
+        check_tainted(u.hostname);
+      });
+
+      // host setter with an explicit port; the host portion must stay tainted.
+      add_task(async function test_host_setter_with_port_tainted() {
+        const u = new URL("https://example.com/p");
+        u.host = String.tainted("evilhost") + ":8443";
+        check_tainted(u.host);
+        is(u.port, "8443", "port parsed: " + u.port);
+      });
+
+      // hostname setter (already worked) — guard against regressions.
+      add_task(async function test_hostname_setter_tainted() {
+        const u = new URL("https://example.com/p");
+        u.hostname = String.tainted("evilhost");
+        check_tainted(u.hostname);
+      });
+
+      // Untainted setters must stay untainted.
+      add_task(async function test_setters_untainted() {
+        const u = new URL("https://example.com/orig");
+        u.pathname = "/plain/path";
+        u.host = "plainhost";
+        check_untainted(u.pathname);
+        check_untainted(u.host);
+      });
+    </script>
+  </head>
+  <body>
+    <p id="display"></p>
+    <div id="content" style="display: none"></div>
+    <pre id="test"></pre>
+  </body>
+</html>

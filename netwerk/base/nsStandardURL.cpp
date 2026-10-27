@@ -887,6 +887,10 @@ int32_t nsStandardURL::ReplaceSegment(uint32_t pos, uint32_t len,
   if (val && valLen) {
     if (len == 0) {
       mSpec.Insert(val, pos, valLen);
+      // Foxhound: Insert() only shifts/clears the existing taint for the
+      // inserted range, it cannot carry taint from the raw `val` buffer.
+      // Overlay the segment's taint explicitly so it is not lost.
+      mSpec.Taint().insert(pos, taint);
     } else {
       mSpec.Replace(pos, len, nsDependentCString(val, valLen));
       mSpec.Taint().replace(pos, pos + len, valLen, taint);
@@ -1893,7 +1897,13 @@ nsresult nsStandardURL::SetHostPort(const nsACString& aValue) {
 
   auto onExitGuard = MakeScopeExit([&] { SanityCheck(); });
 
-  nsresult rv = SetHost(Substring(start, iter));
+  // Foxhound: an iterator-based Substring(start, iter) rebinds to a raw char*
+  // and drops taint. Build the host substring from offsets into aValue so the
+  // host's taint is carried into SetHost.
+  const char* base = aValue.BeginReading();
+  uint32_t hostPos = static_cast<uint32_t>(start.get() - base);
+  uint32_t hostLen = static_cast<uint32_t>(iter.get() - start.get());
+  nsresult rv = SetHost(Substring(aValue, hostPos, hostLen));
   NS_ENSURE_SUCCESS(rv, rv);
 
   if (iter == end) {
@@ -2809,7 +2819,9 @@ nsresult nsStandardURL::SetFilePath(const nsACString& input) {
     }
 
     // build up new candidate spec
-    spec.Assign(mSpec.get(), mPath.mPos);
+    // Foxhound: assign from a substring of mSpec (not the raw char* buffer) so
+    // the taint of the retained prefix survives.
+    spec.Assign(Substring(mSpec, 0, mPath.mPos));
 
     // ensure leading '/'
     if (filepath[dirPos] != '/') {
@@ -2819,22 +2831,21 @@ nsresult nsStandardURL::SetFilePath(const nsACString& input) {
     nsSegmentEncoder encoder;
 
     // append encoded filepath components
+    // Foxhound: feed the encoder substrings of the tainted `str` (rather than
+    // dependent substrings over the raw char* buffer, which carry no taint).
     if (dirLen > 0) {
-      encoder.EncodeSegment(
-          Substring(filepath + dirPos, filepath + dirPos + dirLen),
-          esc_Directory | esc_AlwaysCopy, spec);
+      encoder.EncodeSegment(Substring(str, dirPos, dirLen),
+                            esc_Directory | esc_AlwaysCopy, spec);
     }
     if (baseLen > 0) {
-      encoder.EncodeSegment(
-          Substring(filepath + basePos, filepath + basePos + baseLen),
-          esc_FileBaseName | esc_AlwaysCopy, spec);
+      encoder.EncodeSegment(Substring(str, basePos, baseLen),
+                            esc_FileBaseName | esc_AlwaysCopy, spec);
     }
     if (extLen >= 0) {
       spec.Append('.');
       if (extLen > 0) {
-        encoder.EncodeSegment(
-            Substring(filepath + extPos, filepath + extPos + extLen),
-            esc_FileExtension | esc_AlwaysCopy, spec);
+        encoder.EncodeSegment(Substring(str, extPos, extLen),
+                              esc_FileExtension | esc_AlwaysCopy, spec);
       }
     }
 
@@ -2842,7 +2853,9 @@ nsresult nsStandardURL::SetFilePath(const nsACString& input) {
     if (mFilepath.mLen >= 0) {
       uint32_t end = mFilepath.mPos + mFilepath.mLen;
       if (mSpec.Length() > end) {
-        spec.Append(mSpec.get() + end, mSpec.Length() - end);
+        // Foxhound: append from a substring of mSpec so the query/ref tail
+        // keeps its taint.
+        spec.Append(Substring(mSpec, end, mSpec.Length() - end));
       }
     }
 
@@ -2940,8 +2953,16 @@ nsresult nsStandardURL::SetQueryWithEncoding(const nsACString& input,
   nsAutoCString buf;
   bool encoded;
   nsSegmentEncoder encoder(encoding);
-  encoder.EncodeSegmentCount(query, flat.Taint(), URLSegment(0, queryLen), esc_Query, buf,
-                             encoded);
+  // Foxhound: `query` points into `filteredURI` (possibly past a leading '?'),
+  // so encode from that offset and remap taint against `filteredURI`.
+  uint32_t queryPos = query - filteredURI.get();
+  encoder.EncodeSegmentCount(filteredURI.get(), filteredURI.Taint(),
+                             URLSegment(queryPos, queryLen), esc_Query, buf, encoded);
+  // Foxhound: when nothing needs escaping `buf` is left empty and carries no
+  // taint, so fall back to the taint of the unescaped query.
+  SafeStringTaint queryTaint =
+      encoded ? SafeStringTaint(buf.Taint())
+              : filteredURI.Taint().safeSubTaint(queryPos, queryPos + queryLen);
   if (encoded) {
     query = buf.get();
     queryLen = buf.Length();
@@ -2953,7 +2974,7 @@ nsresult nsStandardURL::SetQueryWithEncoding(const nsACString& input,
     return NS_ERROR_MALFORMED_URI;
   }
 
-  int32_t shift = ReplaceSegment(mQuery.mPos, mQuery.mLen, query, queryLen, buf.Taint());
+  int32_t shift = ReplaceSegment(mQuery.mPos, mQuery.mLen, query, queryLen, queryTaint);
 
   if (shift) {
     mQuery.mLen = queryLen;
@@ -3017,7 +3038,16 @@ nsresult nsStandardURL::SetRef(const nsACString& input) {
   // encode ref if necessary
   bool encoded;
   nsSegmentEncoder encoder;
-  encoder.EncodeSegmentCount(ref, flat.Taint(), URLSegment(0, refLen), esc_Ref, buf, encoded);
+  // Foxhound: `ref` points into `filteredURI` (possibly past a leading '#'),
+  // so encode from that offset and remap taint against `filteredURI`.
+  uint32_t refPos = ref - filteredURI.get();
+  encoder.EncodeSegmentCount(filteredURI.get(), filteredURI.Taint(),
+                             URLSegment(refPos, refLen), esc_Ref, buf, encoded);
+  // Foxhound: when nothing needs escaping `buf` is left empty and carries no
+  // taint, so fall back to the taint of the unescaped ref.
+  SafeStringTaint refTaint =
+      encoded ? SafeStringTaint(buf.Taint())
+              : filteredURI.Taint().safeSubTaint(refPos, refPos + refLen);
   if (encoded) {
     ref = buf.get();
     refLen = buf.Length();
@@ -3029,7 +3059,7 @@ nsresult nsStandardURL::SetRef(const nsACString& input) {
     return NS_ERROR_MALFORMED_URI;
   }
 
-  int32_t shift = ReplaceSegment(mRef.mPos, mRef.mLen, ref, refLen, buf.Taint());
+  int32_t shift = ReplaceSegment(mRef.mPos, mRef.mLen, ref, refLen, refTaint);
   mPath.mLen += shift;
   mRef.mLen = refLen;
   return NS_OK;
