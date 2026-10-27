@@ -17,6 +17,7 @@
 #include <vector>
 #include <array>
 #include <atomic>
+#include <memory>
 #include <string_view>
 
 // It appears that source_location is not supported as standard and
@@ -196,6 +197,12 @@ class TaintNode {
   // Constructs a root node.
   explicit TaintNode(TaintOperation&& operation) noexcept;
 
+  // Constructs an intermediate node that shares |operation| with other nodes,
+  // e.g. the nodes of all ranges of one string that a single operation
+  // produced.
+  TaintNode(TaintNode* parent,
+            std::shared_ptr<const TaintOperation> operation) noexcept;
+
   // Increments the reference count of this object by one.
   void addref();
 
@@ -207,7 +214,7 @@ class TaintNode {
   TaintNode* parent() { return parent_; }
 
   // Returns the operation associated with this taint node.
-  const TaintOperation& operation() const { return operation_; }
+  const TaintOperation& operation() const { return *operation_; }
 
  private:
   // Prevent clients from deleting us. TaintNodes can only be destroyed
@@ -220,8 +227,11 @@ class TaintNode {
 
   std::atomic_uint32_t refcount_;
 
-  // The operation that led to the creation of this node.
-  TaintOperation operation_;
+  // The operation that led to the creation of this node. Operations are
+  // immutable, and one operation can be shared by many nodes: with full
+  // arguments, a concat operation holds the text of both operands, which must
+  // not be copied once per range of the result.
+  std::shared_ptr<const TaintOperation> operation_;
 
   // TaintNodes aren't supposed to be copied or assigned to (that's why we
   // refcount them), so these operations are unavailable.
@@ -333,6 +343,9 @@ class TaintFlow {
   // Constructs a new taint node as child of the current head node and sets
   // the newly constructed node as head of this taint flow.
   TaintFlow& extend(TaintOperation&& operation);
+
+  // Like extend() above, but the new node shares |operation|.
+  TaintFlow& extend(std::shared_ptr<const TaintOperation> operation);
 
   // Iterator support
   //
@@ -581,8 +594,9 @@ class StringTaint {
   StringTaint& extend(TaintOperation&& operation);
 
   // Adds a taint operation to the taint flows of all ranges in this instance,
-  // building the operation per range rather than sharing one. `opForRange` is
-  // called with each range and returns the operation to add to that range's flow.
+  // choosing the operation per range. `opForRange` is called with each range
+  // and returns a shared operation to add to that range's flow. Return the same
+  // pointer for ranges that get the same operation, so it is stored only once.
   //
   // This exists for operations whose recorded arguments depend on where in the
   // result a range sits, which a single shared operation cannot express: concat

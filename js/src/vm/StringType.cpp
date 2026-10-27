@@ -1452,14 +1452,23 @@ JSString* js::ConcatStrings(
       // but not which one this range is, so record the side per range. Without it
       // a consumer replaying the flow cannot place the value back in its original
       // position when the operands' text does not identify them.
+      // Build each side's operation once and share it between its ranges: the
+      // arguments hold both operands' text, so a copy per range made chains of
+      // concatenations quadratic.
+      static const char16_t* const kSides[] = {u"L", u"R", u"LR"};
+      std::shared_ptr<const TaintOperation> sideOps[3];
       str->taint().extendPerRange([&](const TaintRange& range) {
-        const char16_t* side = range.end() <= leftLength     ? u"L"
-                               : range.begin() >= leftLength ? u"R"
-                                                             : u"LR";
-        return JS::TaintOperationConcatWithSide(op, side);
+        size_t side = range.end() <= leftLength     ? 0
+                      : range.begin() >= leftLength ? 1
+                                                    : 2;
+        if (!sideOps[side]) {
+          sideOps[side] = std::make_shared<const TaintOperation>(
+              JS::TaintOperationConcatWithSide(op, kSides[side]));
+        }
+        return sideOps[side];
       });
     } else {
-      str->taint().extend(op);
+      str->taint().extend(std::move(op));
     }
   }
 

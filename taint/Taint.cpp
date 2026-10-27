@@ -158,7 +158,7 @@ void TaintOperation::dump(const TaintOperation& op) {}
 #endif
 
 TaintNode::TaintNode(TaintNode* parent, const TaintOperation& operation)
-    : parent_(parent), refcount_(1), operation_(operation) {
+    : parent_(parent), refcount_(1), operation_(std::make_shared<const TaintOperation>(operation)) {
   MOZ_COUNT_CTOR(TaintNode);
   if (parent_) {
     parent_->addref();
@@ -166,7 +166,7 @@ TaintNode::TaintNode(TaintNode* parent, const TaintOperation& operation)
 }
 
 TaintNode::TaintNode(TaintNode* parent, TaintOperation&& operation) noexcept
-    : parent_(parent), refcount_(1), operation_(std::move(operation)) {
+    : parent_(parent), refcount_(1), operation_(std::make_shared<const TaintOperation>(std::move(operation))) {
   MOZ_COUNT_CTOR(TaintNode);
   if (parent_) {
     parent_->addref();
@@ -174,13 +174,22 @@ TaintNode::TaintNode(TaintNode* parent, TaintOperation&& operation) noexcept
 }
 
 TaintNode::TaintNode(const TaintOperation& operation)
-    : parent_(nullptr), refcount_(1), operation_(operation) {
+    : parent_(nullptr), refcount_(1), operation_(std::make_shared<const TaintOperation>(operation)) {
   MOZ_COUNT_CTOR(TaintNode);
 }
 
 TaintNode::TaintNode(TaintOperation&& operation) noexcept
-    : parent_(nullptr), refcount_(1), operation_(std::move(operation)) {
+    : parent_(nullptr), refcount_(1), operation_(std::make_shared<const TaintOperation>(std::move(operation))) {
   MOZ_COUNT_CTOR(TaintNode);
+}
+
+TaintNode::TaintNode(TaintNode* parent,
+                     std::shared_ptr<const TaintOperation> operation) noexcept
+    : parent_(parent), refcount_(1), operation_(std::move(operation)) {
+  MOZ_COUNT_CTOR(TaintNode);
+  if (parent_) {
+    parent_->addref();
+  }
 }
 
 void TaintNode::addref() {
@@ -320,6 +329,15 @@ TaintFlow& TaintFlow::extend(const TaintOperation& operation) const {
 }
 
 TaintFlow& TaintFlow::extend(TaintOperation&& operation) {
+  TaintNode* newhead = new TaintNode(head_, std::move(operation));
+  if (head_) {
+    head_->release();
+  }
+  head_ = newhead;
+  return *this;
+}
+
+TaintFlow& TaintFlow::extend(std::shared_ptr<const TaintOperation> operation) {
   TaintNode* newhead = new TaintNode(head_, std::move(operation));
   if (head_) {
     head_->release();
@@ -787,15 +805,24 @@ StringTaint& StringTaint::extend(const TaintOperation& operation) {
   if (!ranges_) {
     return *this;
   }
+  auto shared = std::make_shared<const TaintOperation>(operation);
   for (auto& range : *ranges_) {
-    range.flow().extend(operation);
+    range.flow().extend(shared);
   }
 
   return *this;
 }
 
 StringTaint& StringTaint::extend(TaintOperation&& operation) {
-  return extend(static_cast<const TaintOperation&>(operation));
+  if (!ranges_) {
+    return *this;
+  }
+  auto shared = std::make_shared<const TaintOperation>(std::move(operation));
+  for (auto& range : *ranges_) {
+    range.flow().extend(shared);
+  }
+
+  return *this;
 }
 
 StringTaint& StringTaint::overlay(uint32_t begin, uint32_t end,
