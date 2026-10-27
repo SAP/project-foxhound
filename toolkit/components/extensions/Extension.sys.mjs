@@ -192,6 +192,7 @@ const PRIVILEGED_PERMS = new Set([
   "mozillaAddons",
   "networkStatus",
   "normandyAddonStudy",
+  "tainting",
   "telemetry",
 ]);
 

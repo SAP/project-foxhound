@@ -1,7 +1,22 @@
 [
   {
+    "namespace": "manifest",
+    "types": [
+      {
+        "$extend": "PermissionPrivileged",
+        "choices": [
+          {
+            "type": "string",
+            "enum": ["tainting"]
+          }
+        ]
+      }
+    ]
+  },
+  {
     "namespace": "tainting",
-    "description": "Foxhound Taint Export Extension",
+    "description": "Foxhound Taint Export Extension. Restricted to privileged webextensions.",
+    "permissions": ["tainting"],
     "allowedContexts": ["content", "devtools"],
     "defaultContexts": ["content", "devtools"],
     "functions": [

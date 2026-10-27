@@ -331,8 +331,8 @@ static already_AddRefed<StringBuffer> Create(const char* aData,
       auto* data = reinterpret_cast<CharT*>(buffer->Data());
       memcpy(data, aData, aLength * sizeof(CharT));
       data[aLength] = 0;
+      buffer->AssignTaint(aTaint);
     }
-    buffer->AssignTaint(aTaint);
 
     return already_AddRefed(buffer);
   }

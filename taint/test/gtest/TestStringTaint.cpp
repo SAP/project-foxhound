@@ -441,6 +441,15 @@ TEST(TaintSerialization, ParsesStrictJsonAndRejectsMalformedPayloads)
   EXPECT_FALSE(
       SafeStringTaint(ParseStringTaintForE2E("[{\"begin\": 1, \"end\": 5}]"))
           .hasTaint());
+  // Inverted and empty ranges violate the StringTaint invariants.
+  EXPECT_FALSE(
+      SafeStringTaint(ParseStringTaintForE2E(
+                          "[{\"begin\": 100, \"end\": 5, \"source\": \"e2e\"}]"))
+          .hasTaint());
+  EXPECT_FALSE(
+      SafeStringTaint(ParseStringTaintForE2E(
+                          "[{\"begin\": 5, \"end\": 5, \"source\": \"e2e\"}]"))
+          .hasTaint());
 }
 
 TEST(TaintSerialization, E2ERoundTrip)

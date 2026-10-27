@@ -12,6 +12,9 @@ on:
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 # A workflow run is made up of one or more jobs that can run sequentially or in parallel
 jobs:
 
@@ -25,17 +28,15 @@ jobs:
 
     # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
-      - name: Free Disk Space (Ubuntu)
-        uses: jlumbroso/free-disk-space@main
+      - name: Checkout release branch
+        uses: actions/checkout@v4
         with:
-          tool-cache: true
-          android: true
-          dotnet: true
-          haskell: true
-          large-packages: true
-          docker-images: true
-          swap-storage: true
+          fetch-depth: 1
 
+      - name: Free Disk Space (Ubuntu)
+        # Inlined from https://github.com/jlumbroso/free-disk-space to avoid
+        # pinning to a mutable branch name (supply-chain risk).
+        uses: ./.github/actions/free-disk-space
 
       - name: Install Dependencies
         run: |
@@ -51,12 +52,6 @@ jobs:
                git
           sudo apt-get install -y --no-install-recommends ffmpeg libasound2 libatk1.0-0 libcairo-gobject2 libcairo2 libdbus-1-3 libdbus-glib-1-2 libfontconfig1 libfreetype6 libgdk-pixbuf-2.0-0 libglib2.0-0 libgtk-3-0 libpango-1.0-0 libpangocairo-1.0-0 libx11-6 libx11-xcb1 libxcb-shm0 libxcb1 libxcomposite1 libxcursor1 libxdamage1 libxext6 libxfixes3 libxi6 libxrandr2 libxrender1 libxtst6 xvfb fonts-noto-color-emoji fonts-unifont xfonts-cyrillic xfonts-scalable fonts-liberation fonts-ipafont-gothic fonts-wqy-zenhei fonts-tlwg-loma-otf fonts-freefont-ttf
           python3 -m pip install setuptools
-
-
-      - name: Checkout release branch
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
 
       - name: Bootstrap
         run: |

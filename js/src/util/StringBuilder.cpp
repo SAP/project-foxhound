@@ -135,7 +135,9 @@ JSLinearString* StringBuilder::finishStringInternal(JSContext* cx,
     JSLinearString* str = NewInlineString<CanGC>(cx, range);
 
     // Foxhound: Propagate taint to newly created string.
-    str->setTaint(cx, taint);
+    if (str) {
+      str->setTaint(cx, taint);
+    }
     // Foxhound: clear the stringbuffer taint information
     clearTaint();
 
@@ -156,9 +158,11 @@ JSLinearString* StringBuilder::finishStringInternal(JSContext* cx,
   //      the nursery.
   if (len < JSString::MIN_BYTES_FOR_BUFFER / sizeof(CharT)) {
     JSLinearString* str = NewStringCopyNDontDeflate<CanGC>(cx, begin<CharT>(), len, heap);
-    
+
     // Foxhound: Propagate taint to newly created string.
-    str->setTaint(cx, taint);
+    if (str) {
+      str->setTaint(cx, taint);
+    }
     // Foxhound: clear the stringbuffer taint information
     clearTaint();
 
@@ -197,7 +201,9 @@ JSLinearString* StringBuilder::finishStringInternal(JSContext* cx,
   JSLinearString* str = JSLinearString::new_<CanGC, CharT>(cx, &owned, heap);
 
   // Foxhound: Propagate taint to newly created string.
-  str->setTaint(cx, taint);
+  if (str) {
+    str->setTaint(cx, taint);
+  }
   // Foxhound: clear the stringbuffer taint information
   clearTaint();
 

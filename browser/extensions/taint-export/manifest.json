@@ -24,6 +24,7 @@
 
   "permissions": [
     "<all_urls>",
-    "webRequest"
+    "webRequest",
+    "tainting"
   ]
 }

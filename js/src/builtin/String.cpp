@@ -2366,6 +2366,9 @@ static bool str_charAt(JSContext* cx, unsigned argc, Value* vp) {
   // Foxhound: avoid atoms here if the base string is tainted. TODO(samuel)
   if (str->isTainted() && index.isSome()) {
     str = NewDependentString(cx, str, index.value(), 1);
+    if (!str) {
+      return false;
+    }
     str->taint().extend(TaintOperation("charAt", TaintLocationFromContext(cx), { taintarg(cx, index.value()) }));
     args.rval().setString(str);
   } else { // Foxhound: only use static string if not tainted

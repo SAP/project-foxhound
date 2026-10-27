@@ -61,21 +61,11 @@ jobs:
 
       - name: Free Disk Space
         if: steps.cache.outputs.cache-hit != 'true'
-        uses: jlumbroso/free-disk-space@main
-        with:
-          tool-cache: true
-          android: true
-          dotnet: true
-          haskell: true
-          large-packages: true
-          docker-images: true
-          swap-storage: true
+        uses: ./.github/actions/free-disk-space
 
       - name: Set Swap Space
         if: steps.cache.outputs.cache-hit != 'true'
-        uses: pierotofy/set-swap-space@master
-        with:
-          swap-size-gb: 10
+        uses: ./.github/actions/set-swap-space
 
       - name: Install dependencies
         if: steps.cache.outputs.cache-hit != 'true'
@@ -122,32 +112,26 @@ jobs:
     runs-on: ubuntu-22.04
     name: Build Foxhound
     steps:
-      - name: Free Disk Space
-        uses: jlumbroso/free-disk-space@main
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
-          tool-cache: true
-          android: true
-          dotnet: true
-          haskell: true
-          large-packages: true
-          docker-images: true
-          swap-storage: true
+          fetch-depth: 1
+
+      - name: Free Disk Space
+        # Inlined from https://github.com/jlumbroso/free-disk-space to avoid
+        # pinning to a mutable branch name (supply-chain risk).
+        uses: ./.github/actions/free-disk-space
 
       - name: Set Swap Space
-        uses: pierotofy/set-swap-space@master
-        with:
-          swap-size-gb: 10
+        # Inlined from https://github.com/pierotofy/set-swap-space to avoid
+        # pinning to a mutable branch name (supply-chain risk).
+        uses: ./.github/actions/set-swap-space
 
       - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y curl python3 python3-pip python3-venv tar zip unzip git
           python3 -m pip install setuptools
-
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
 
       - name: Bootstrap
         run: |
