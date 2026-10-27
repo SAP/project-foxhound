@@ -96,6 +96,16 @@
         SimpleTest.is(op.operation, "foo");
         checkArguments(op, ["hello", arg]);
       });
+
+      // very long string
+      add_task(async function test_default_name_with_extra_args() {
+        let str = "hello" + " hello".repeat(128);
+        const op = sourceOp(
+          String.tainted(str, "foo", "bar")
+        );
+        SimpleTest.is(op.operation, "foo");
+        checkArguments(op, [str, "bar"]);
+      });
     </script>
   </head>
 
